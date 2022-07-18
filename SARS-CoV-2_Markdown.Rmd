@@ -1,0 +1,2802 @@
+---
+title: "SARS-CoV-2 Markdown"
+author: "Nicholas P Dylla"
+date: "`r Sys.Date()`"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+header-includes:
+  - |
+    ```{=latex}
+    \usepackage{fvextra}
+    \DefineVerbatimEnvironment{Highlighting}{Verbatim}{
+      showspaces = false,
+      showtabs = false,
+      breaklines,
+      commandchars=\\\{\}
+    }
+    ```
+---
+
+# Table of Contents
+1. Load Packages
+2. Load Metabolomic and Metagenomic Data
+3. Main Figures and Tables
+  1. Figure 1
+  2. Figure 3
+  3. Figure 4
+  4. Figure 5
+  5. Figure 6
+  6. Table 2
+  7. Table 3
+  8. Table 4
+  9. Table 5
+4. Supplemtal Figures and Tables
+  1. Supplemental Figure 1
+  2. Supplemental Figure 2
+5. Save Data Image
+
+***
+
+### Load packages and markdown options
+```{r package-loading, message=FALSE, warning=FALSE}
+# BiocManager::install('EnhancedVolcano')
+# BiocManager::install('microbiomeMarker')
+
+pacman::p_load(
+  tidyverse,                # Data wrangling and visualization
+  purrr,                    # Functional programming
+  ggrepel,                  # Visualization, repels labels on plots
+  knitr,                    # To change R markdown PDF options
+  cutpointr,                # Calculate cutpoints
+  cowplot,                  # Plot ggplots together
+  caret,                    # Machine learning 
+  umap,                     # UMAP
+  ggsci,                    # Color palette
+  phyloseq,                 # Manage genomic data
+  microbiomeMarker,         # LEfSe analysis
+  grid,                     # Work with graphical objects
+  gridExtra,                # Plot multiple ggplots
+  yingtools2,               # Custom functions for data manipulation
+  ggpirate,                 # ggplot version of Pirate plot
+  stringr,                  # Work with character strings
+  magick,                   # Import pdf into ggplot
+  ComplexHeatmap,           # Heatmap
+  circlize,                 # Color generator for heatmap
+  survival,                 # Survival analysis
+  survminer,                # Visualize survival analysis
+  gtsummary,                # Table visualization
+  gt,                       # Export gtsummary table
+  pROC,                     # ROC analysis
+  grDevices,                # Alternative pdf (cairo_pdf) to save special characters
+  tableone,                 # Create table ones
+  rstatix,                  # Tidyverse statistics
+  EnhancedVolcano,          # Volcano plot
+  bestglm,                  # Logistic regression
+  devtools,                 # Source functions from GitHub
+  install = F
+)
+
+# ggplot theme shortcuts
+et <- element_text
+eb <- element_blank
+er <- element_rect
+
+opts_chunk$set(tidy.opts = list(width.cutoff = 60), tidy = TRUE)
+```
+
+### Load in Metabolomic and Metagenomic Data
+```{r load-in-data, message=FALSE, warning=FALSE}
+#1) Load R image
+# load("./Data/SARS-CoV-2_Modeling.RData")
+
+# OR #
+
+#2) Individually Load R Objects 
+
+#### START ####
+# Covid lookup table
+covid_lookup <- readRDS("./Data/covid_lookup_patientID.rds") 
+
+# Covid transition table
+covid_transition <- readRDS("./Data/covid_transition_patientID.rds")
+
+# Table one data
+tableone_vars <- readRDS("./Data/tableone_variables.rds") 
+  
+tableone_cats <- readRDS("./Data/tableone_categories.rds")
+
+# Metagenomic Data
+covid_kraken <- readRDS("./Data/covid_kraken_patientID.rds")
+
+## Save kraken data as CSV as response to reviewer's comments
+covid_kraken %>% 
+  arrange(patient_ID, desc(pctseqs), Kingdom, Phylum, Class, Order, Family, Genus, Species) %>% 
+  group_by(patient_ID) %>% 
+  filter(pctseqs >= 0.0001) %>% 
+  write.csv(., "./Results/covid_kraken_taxonomy.csv", row.names = F)
+
+mat <- readRDS("./Data/shotgun_matrix_patientID.rds")
+
+tax_lookup <- readRDS("./Data/tax_lookup.rds")
+
+# EggNog emapper
+emapper <- readRDS("./Data/emapper_patientID.rds") 
+
+# BAI related genes
+bai <- readRDS("./Data/bai_patientID.rds")
+
+# DAT related genes
+dat <- readRDS("./Data/dat_patientID.rds")
+
+# Butyrate related genes
+lca <- readRDS("./Data/butyrate_patientID.rds")
+
+# CARD related genes lookup
+card_dict <- readRDS("./Data/card_dict.rds")
+
+# CARD data for covid patients
+card <- readRDS("./Data/card_patientID.rds") 
+
+# Bacteriocin related genes
+bactocin <- readRDS("./Data/bactocin_patientID.rds")
+
+# Length of stay data
+covid_flow <- readRDS("./Data/covid_flow_patientID.rds") 
+
+# Qualitative Metabolomic Data
+metab_qual_raw <- readRDS("./Data/metab_qual_raw_patientID.rds")
+
+# Quantitative Metabolomic Data
+metab_quant <- readRDS("./Data/metab_quant_patientID.rds")
+
+# vital_status == 0, ALIVE
+# vital_status == 1, DECEASED
+
+#### END ####
+
+# Load color palette from GitHub
+source_url("https://github.com/yingeddi2008/DFIutility/blob/master/getRdpPal.R?raw=TRUE")
+pal <- getRdpPal(covid_kraken)
+```
+
+### Figure 1
+```{r, figure-1, fig.dim=c(10,12), message=FALSE, warning=FALSE}
+#### Relative Abundance Plot START ####
+# Obtain proteobacteria abundances per sample
+proteo <- 
+  covid_kraken %>% 
+  filter(Phylum == "Proteobacteria") %>% 
+  count(patient_ID, wt = pctseqs, name = "Proteobacteria")
+
+# Create ggplot ordered by proteobacteria abundance
+gg_proteo <- covid_kraken %>% 
+  left_join(proteo) %>% 
+  arrange(Kingdom, Phylum, Class, Order, Family, Genus) %>% 
+  mutate(Genus = factor(Genus, levels = unique(Genus))) %>% 
+  group_by(patient_ID) %>%
+  arrange(Genus) %>%
+  mutate(cum.pct = cumsum(pctseqs),
+         y.text = (cum.pct + c(0, cum.pct[-length(cum.pct)]))/2) %>%
+  ungroup() %>%
+  dplyr::select(-cum.pct) %>%
+  mutate(Genus2=Genus) %>%
+  separate(Genus2, into=c("k","p","c","o","f","g","s"),sep="\\|") %>%
+  mutate(s=gsub(" sp\\.","",s),
+         tax.label=ifelse(pctseqs >= 0.25,as.character(gsub(" ","\n",g)),"")) %>%
+  left_join(covid_lookup %>% 
+              select(patient_ID, vital_des)) %>% 
+  mutate(vital_des = as.factor(vital_des),
+         vital_des = factor(vital_des, levels = c("Deceased", "Alive"))) %>% 
+  ggplot(aes(x=reorder(patient_ID, -Proteobacteria),y=pctseqs)) +
+  geom_bar(aes(fill=Genus),stat="identity") +
+  # geom_text(aes(y=1-y.text,label=tax.label),size=2,
+  #           angle=90,
+  #           lineheight=0.6) +
+  theme_bw() +
+  theme(legend.position = "none",
+        # axis.title.x = eb(),
+        axis.text.x=eb(),
+        # axis.text.x=et(angle = 90, color = "black"),
+        strip.text.x= et(angle=0,size=14),
+        strip.background = element_rect(fill = "white"),
+        axis.title.y = et(color = "black", size = 12),
+        axis.text.y = et(color = "black", size = 10)) +
+  scale_fill_manual(values=pal) +
+  scale_y_continuous(expand = expansion(mult = c(0.005,0.005)))+
+  ylab("Relative Abundance (%)\n") +
+  xlab("")+
+  facet_grid(.~vital_des, space = "free_x", scales = "free_x")
+
+
+# Color facets
+proteo_grob <- ggplot_gtable(ggplot_build(gg_proteo))
+strip_both <- which(grepl('strip-', proteo_grob$layout$name))
+fills <- rev(ggsci::pal_igv("default")(2))
+k <- 1
+for (i in strip_both) {
+  j <- which(grepl('rect',  proteo_grob$grobs[[i]]$grobs[[1]]$childrenOrder))
+  l <- which(grepl('titleGrob', proteo_grob$grobs[[i]]$grobs[[1]]$childrenOrder))
+  proteo_grob$grobs[[i]]$grobs[[1]]$children[[j]]$gp$col <- fills[k]
+  proteo_grob$grobs[[i]]$grobs[[1]]$children[[l]]$children[[1]]$gp$col <- fills[k]
+  k <- k+1
+}
+
+pdf("./Results/shotgun_relative_abundance.pdf", height = 6, width = 12)
+
+grid.draw(proteo_grob)
+
+dev.off()
+
+#### Relative Abundance Plot END ####
+
+
+#### Alpha Diversity Plot Inverse Simpson START ####
+# Filter matrix to only contain percent sequences (pctseq) >= 0.0001 (0.01%)
+mat_filt <- mat %>% 
+  pivot_longer(-patient_ID, names_to = "taxid", values_to = "pctseqs") %>% 
+  group_by(patient_ID) %>% 
+  filter(pctseqs >= 0.0001) %>% 
+  pivot_wider(patient_ID, names_from = "taxid", values_from = "pctseqs", values_fill = 0) %>% 
+  as.data.frame()
+  
+mat_invsim <- mat_filt
+row.names(mat_invsim) <- mat_invsim$patient_ID
+mat_invsim <- mat_invsim %>% select(-patient_ID)
+
+mat_invsim_t <- mat_invsim %>% t()
+
+alpha_invsim <- vegan::diversity(mat_invsim,index="invsimpson") %>%
+  as.data.frame()
+colnames(alpha_invsim)[1] <- "InvSimpson"
+alpha_invsim$patient_ID <- row.names(alpha_invsim)
+
+# Obtain values for mean alpha diversity for alive and deceased
+alpha_invsim %>% 
+  left_join(covid_lookup %>% 
+              select(patient_ID, vital_des)) %>% 
+  group_by(vital_des) %>% 
+  summarise(mean = mean(InvSimpson))
+
+# Obtain stats for alpha diversity
+alpha_invsim_stats <-
+alpha_invsim %>% 
+  left_join(covid_lookup %>% 
+              select(patient_ID, vital_des)) %>% 
+  rstatix::wilcox_test(InvSimpson~vital_des)
+
+pirate_colors <- rev(ggsci::pal_igv("default")(2))
+
+set.seed(456)
+gg_alpha_invsim <- alpha_invsim %>% 
+  left_join(covid_lookup %>% 
+              select(patient_ID, vital_des)) %>% 
+    mutate(vital_des = as.factor(vital_des),
+         vital_des = factor(vital_des, levels = c("Deceased", "Alive"))) %>% 
+  ggplot(., aes(x = vital_des, y = InvSimpson, colour = vital_des, fill = vital_des)) +
+  geom_pirate(cis_params = list(fill = "white", alpha = 0.5),
+              bars_params = list(alpha = 0.65),
+              lines_params = list(size = 0.5),
+              points_params = list(fill = "black", size = 3.5),
+              jitter_width = 0.75,
+              cis = TRUE,
+              violins = FALSE) +
+  annotate("text", x = 1.15, y = 39.5, label = paste0("Wilcoxon, W = ", alpha_invsim_stats$statistic, ", p = ", alpha_invsim_stats$p),
+           size = 2.3) +
+  theme_bw() +
+  theme(
+    panel.grid = eb(),
+    axis.title.y = et(size = 14, color = "black"),
+    axis.title.x = eb(),
+    axis.text = et(size = 12, color = "black"),
+    plot.margin = margin(t = 5,  # Top margin
+                         r = 5,  # Right margin
+                         b = 5,  # Bottom margin
+                         l = 5) # Left margin
+    # plot.margin = margin(t = 0.2,  # Top margin
+    #                      r = 35,  # Right margin
+    #                      b = 0.2,  # Bottom margin
+    #                      l = 35) # Left margin
+  ) +
+  ylab("Alpha Diversity\n(Inverse Simpson Index)\n") +
+  scale_fill_manual(values = pirate_colors) +
+  scale_color_manual(values = pirate_colors) +
+  scale_y_continuous(breaks = seq(0,40,5))
+  
+  
+gg_alpha_invsim
+
+pdf("./Results/shotgun_pirate_alpha_diversity_invsim_vital.pdf", height = 6, width = 7)
+gg_alpha_invsim
+dev.off()
+#### Alpha Diversity Plot Inverse Simpson END ####
+
+#### Alpha Diversity Plot Shannon START ####
+mat_shannon <- mat_filt
+row.names(mat_shannon) <- mat_shannon$patient_ID
+mat_shannon <- mat_shannon %>% select(-patient_ID)
+
+mat_shannon_t <- mat_shannon %>% t()
+
+alpha_shannon <- vegan::diversity(mat_shannon,index="shannon") %>%
+  as.data.frame()
+colnames(alpha_shannon)[1] <- "Shannon"
+alpha_shannon$patient_ID <- row.names(alpha_shannon)
+
+# Obtain values for mean alpha diversity for alive and deceased
+alpha_shannon %>% 
+  left_join(covid_lookup %>% 
+              select(patient_ID, vital_des)) %>% 
+  group_by(vital_des) %>% 
+  summarise(mean = mean(Shannon))
+
+# Obtain stats for alpha diversity
+alpha_shannon_stats <-
+alpha_shannon %>% 
+  left_join(covid_lookup %>% 
+              select(patient_ID, vital_des)) %>% 
+  rstatix::wilcox_test(Shannon~vital_des)
+
+pirate_colors <- rev(ggsci::pal_igv("default")(2))
+
+set.seed(456)
+gg_alpha_shannon <- alpha_shannon %>% 
+  left_join(covid_lookup %>% 
+              select(patient_ID, vital_des)) %>% 
+    mutate(vital_des = as.factor(vital_des),
+         vital_des = factor(vital_des, levels = c("Deceased", "Alive"))) %>% 
+  ggplot(., aes(x = vital_des, y = Shannon, colour = vital_des, fill = vital_des)) +
+  geom_pirate(cis_params = list(fill = "white", alpha = 0.5),
+              bars_params = list(alpha = 0.65),
+              lines_params = list(size = 0.5),
+              points_params = list(fill = "black", size = 3.5),
+              jitter_width = 0.75,
+              cis = TRUE,
+              violins = FALSE) +
+  annotate("text", x = 1.15, y = 5, label = paste0("Wilcoxon, W = ", alpha_shannon_stats$statistic, ", p = ", alpha_shannon_stats$p),
+           size = 2.3) +
+  theme_bw() +
+  theme(
+    panel.grid = eb(),
+    axis.title.y = et(size = 14, color = "black"),
+    axis.title.x = eb(),
+    axis.text = et(size = 12, color = "black"),
+    plot.margin = margin(t = 5,  # Top margin
+                         r = 5,  # Right margin
+                         b = 5,  # Bottom margin
+                         l = 5) # Left margin
+    # plot.margin = margin(t = 0.2,  # Top margin
+    #                      r = 35,  # Right margin
+    #                      b = 0.2,  # Bottom margin
+    #                      l = 35) # Left margin
+  ) +
+  ylab("Alpha Diversity\n(Shannon Index)\n") +
+  scale_fill_manual(values = pirate_colors) +
+  scale_color_manual(values = pirate_colors) +
+  scale_y_continuous(breaks = seq(0,6,1))
+  
+  
+gg_alpha_shannon
+
+pdf("./Results/shotgun_pirate_alpha_diversity_shannon_vital.pdf", height = 6, width = 7)
+gg_alpha_shannon
+dev.off()
+#### Alpha Diversity Plot Shannon END ####
+
+
+#### Alpha Diversity Plot Richness START ####
+mat_richness <- mat_filt
+row.names(mat_richness) <- mat_richness$patient_ID
+mat_richness <- mat_richness %>% select(-patient_ID)
+
+mat_richness_t <- mat_richness %>% t()
+
+alpha_richness <- vegan::specnumber(mat_richness) %>%
+  as.data.frame()
+colnames(alpha_richness)[1] <- "Richness"
+alpha_richness$patient_ID <- row.names(alpha_richness)
+
+# Obtain values for mean alpha diversity for alive and deceased
+alpha_richness %>% 
+  left_join(covid_lookup %>% 
+              select(patient_ID, vital_des)) %>% 
+  group_by(vital_des) %>% 
+  summarise(mean = mean(Richness))
+
+# Obtain stats for alpha diversity
+alpha_richness_stats <-
+alpha_richness %>% 
+  left_join(covid_lookup %>% 
+              select(patient_ID, vital_des)) %>% 
+  rstatix::wilcox_test(Richness~vital_des)
+
+pirate_colors <- rev(ggsci::pal_igv("default")(2))
+
+set.seed(456)
+gg_alpha_richness <- alpha_richness %>% 
+  left_join(covid_lookup %>% 
+              select(patient_ID, vital_des)) %>% 
+    mutate(vital_des = as.factor(vital_des),
+         vital_des = factor(vital_des, levels = c("Deceased", "Alive"))) %>% 
+  ggplot(., aes(x = vital_des, y = Richness, colour = vital_des, fill = vital_des)) +
+  geom_pirate(cis_params = list(fill = "white", alpha = 0.5),
+              bars_params = list(alpha = 0.65),
+              lines_params = list(size = 0.5),
+              points_params = list(fill = "black", size = 3.5),
+              jitter_width = 0.75,
+              cis = TRUE,
+              violins = FALSE) +
+  annotate("text", x = 1.15, y = 325, label = paste0("Wilcoxon, W = ", alpha_richness_stats$statistic, ", p = ", alpha_richness_stats$p),
+           size = 2.3) +
+  theme_bw() +
+  theme(
+    panel.grid = eb(),
+    axis.title.y = et(size = 14, color = "black"),
+    axis.title.x = eb(),
+    axis.text = et(size = 12, color = "black"),
+    plot.margin = margin(t = 5,  # Top margin
+                         r = 5,  # Right margin
+                         b = 5,  # Bottom margin
+                         l = 5) # Left margin
+    # plot.margin = margin(t = 0.2,  # Top margin
+    #                      r = 35,  # Right margin
+    #                      b = 0.2,  # Bottom margin
+    #                      l = 35) # Left margin
+  ) +
+  ylab("Alpha Diversity\n(Species Richness)\n") +
+  scale_fill_manual(values = pirate_colors) +
+  scale_color_manual(values = pirate_colors) +
+  scale_y_continuous(breaks = seq(0,350,50))
+  
+  
+gg_alpha_richness
+
+pdf("./Results/shotgun_pirate_alpha_diversity_richness_vital.pdf", height = 6, width = 7)
+gg_alpha_richness
+dev.off()
+#### Alpha Diversity Plot Richness END ####
+
+#### Alpha Diversity Plot Evenness START ####
+mat_evenness <- mat_filt
+row.names(mat_evenness) <- mat_evenness$patient_ID
+mat_evenness <- mat_evenness %>% select(-patient_ID)
+mat_evenness_t <- mat_evenness %>% t()
+h <- vegan::diversity(mat_evenness)
+s <- vegan::specnumber(mat_filt)
+alpha_evenness <- h/log(s)
+alpha_evenness <- as.data.frame(alpha_evenness)
+colnames(alpha_evenness)[1] <- "Evenness"
+alpha_evenness$patient_ID <- row.names(alpha_evenness)
+
+# Obtain values for mean alpha diversity for alive and deceased
+alpha_evenness %>% 
+  left_join(covid_lookup %>% 
+              select(patient_ID, vital_des)) %>% 
+  group_by(vital_des) %>% 
+  summarise(mean = mean(Evenness))
+
+# Obtain stats for alpha diversity
+alpha_evenness_stats <-
+alpha_evenness %>% 
+  left_join(covid_lookup %>% 
+              select(patient_ID, vital_des)) %>% 
+  rstatix::wilcox_test(Evenness~vital_des)
+
+pirate_colors <- rev(ggsci::pal_igv("default")(2))
+
+set.seed(456)
+gg_alpha_evenness <- alpha_evenness %>% 
+  left_join(covid_lookup %>% 
+              select(patient_ID, vital_des)) %>% 
+    mutate(vital_des = as.factor(vital_des),
+         vital_des = factor(vital_des, levels = c("Deceased", "Alive"))) %>% 
+  ggplot(., aes(x = vital_des, y = Evenness, colour = vital_des, fill = vital_des)) +
+  geom_pirate(cis_params = list(fill = "white", alpha = 0.5),
+              bars_params = list(alpha = 0.65),
+              lines_params = list(size = 0.5),
+              points_params = list(fill = "black", size = 3.5),
+              jitter_width = 0.75,
+              cis = TRUE,
+              violins = FALSE) +
+  annotate("text", x = 1.15, y = 0.85, label = paste0("Wilcoxon, W = ", alpha_evenness_stats$statistic, ", p = ", alpha_evenness_stats$p),
+           size = 2.3) +
+  theme_bw() +
+  theme(
+    panel.grid = eb(),
+    axis.title.y = et(size = 14, color = "black"),
+    axis.title.x = eb(),
+    axis.text = et(size = 12, color = "black"),
+    plot.margin = margin(t = 5,  # Top margin
+                         r = 5,  # Right margin
+                         b = 5,  # Bottom margin
+                         l = 5) # Left margin
+    # plot.margin = margin(t = 0.2,  # Top margin
+    #                      r = 35,  # Right margin
+    #                      b = 0.2,  # Bottom margin
+    #                      l = 35) # Left margin
+  ) +
+  ylab("Alpha Diversity\n(Species Evenness)\n") +
+  scale_fill_manual(values = pirate_colors) +
+  scale_color_manual(values = pirate_colors) +
+  scale_y_continuous(breaks = seq(0,1,0.1))
+  
+  
+gg_alpha_evenness
+
+pdf("./Results/shotgun_pirate_alpha_diversity_evenness_vital.pdf", height = 6, width = 7)
+gg_alpha_evenness
+dev.off()
+#### Alpha Diversity Plot Observed END ####
+
+#### Combine Alpha Diversity Plots START ####
+gg_alpha_total <- cowplot::plot_grid(
+  gg_alpha_invsim + ylab("Inverse Simpson Index") + theme(axis.text.x = eb(),
+                                                    axis.text.y = et(size = 8),
+                                                    axis.title.y = et(size = 11)),
+  gg_alpha_shannon + ylab("Shannon Index") + theme(axis.text.x = eb(),
+                                             axis.text.y = et(size = 8),
+                                             axis.title.y = et(size = 11)),
+  gg_alpha_richness + ylab("Species Richness")+ theme(axis.text = et(size = 8),
+                                                      axis.title.y = et(size = 11)),
+  gg_alpha_evenness + ylab("Species Evenness")+ theme(axis.text = et(size = 8),
+                                                      axis.title.y = et(size = 11)),
+  align = "hv")
+
+gg_alpha_total
+#### Combine Alpha Diversity Plots END ####
+
+
+#### UMAP Plot 1 START ####
+umap_mat <- mat
+umap_mat <- umap_mat %>% 
+  as.data.frame() %>% 
+  column_to_rownames(var = "patient_ID") 
+custom_config <- umap.defaults
+custom_config$n_neighbors <-  as.integer(nrow(umap_mat) * 0.1)
+custom_config$metric <-  'manhattan'
+
+set.seed(6)
+umap_mat2 <- umap(umap_mat, config = custom_config)
+
+umap_mat_plot <- umap_mat2$layout %>% 
+  as.data.frame() %>%
+  mutate(patient_ID = row.names(.)) %>% 
+  left_join(covid_lookup %>% 
+              select(patient_ID, vital_des, race, sex, Tobacco, Shock, ends_with("doms"))) %>%
+  ggplot(aes(x = V1, y = V2, fill = vital_des))+
+  geom_point(size = 3.25, alpha = 0.8, shape = 21, color = "black")+
+  stat_ellipse(inherit.aes = T, aes(color = vital_des), type = "norm", level = 0.75) +
+  stat_ellipse(inherit.aes = T, geom = "polygon", 
+               aes(fill = vital_des),
+               color = "black",
+               alpha = 0.35,
+               type = "euclid", level = 0.25, show.legend = F) +
+  theme_bw() +
+  theme(panel.grid = eb(),
+        axis.title = et(color = "black", size = 14),
+        axis.text = et(color = "black", size = 12),
+        legend.title = et(color = "black", size = 14),
+        legend.text = et(color = "black", size = 12),
+        plot.margin = margin(t = 0,  # Top margin
+                             r = 50,  # Right margin
+                             b = 0,  # Bottom margin
+                             l = 60)) + # Left margin
+  # ggtitle(paste0("Shotgun Taxonomy: UMAP \nCOVID-19 Alive vs Deceased \n", "n = ", nrow(umap_mat), "\n", custom_config$n_neighbors, " Neighbors")) +
+  xlab("UMAP1") +
+  ylab("UMAP2") +
+  guides(color = guide_legend(title = "Vital Status"),
+         fill = guide_legend(title = "Vital Status"))+
+  ggsci::scale_color_igv()+
+  ggsci::scale_fill_igv() + 
+  lims(x = c(-2.75, 3.6),   # obtained from umap below: ggplot_build(umap_mat_plot_colors)$layout$panel_scales_x[[1]]$range$range
+         y = c(-2.614908, 3.500000))+ # obtained from umap below: ggplot_build(umap_mat_plot_colors)$layout$panel_scales_y[[1]]$range$range
+  coord_equal()
+umap_mat_plot
+
+#### UMAP Plot 1 END ####
+
+#### UMAP Plot 2 START ####
+
+# Chi-square test for proteobacteria domination and covid outcome
+## Proteobacteria  < 0.05 (0%) = 0
+## Proteobacteria >= 0.05 (5%) = 2
+## Covid outcome: Alive = 0
+## Covid outcome: Deceased = 1
+
+
+table(covid_lookup$proteo_doms, covid_lookup$vital_status)
+
+# Run chi-square test
+chisq <- chisq.test(covid_lookup$proteo_doms, covid_lookup$vital_status, correct = FALSE)
+chisq
+
+# corrplot::corrplot((100*chisq$residuals^2/chisq$statistic), is.cor = FALSE)
+
+umap_mat_plot_colors_df <-
+  umap_mat2$layout %>% 
+  as.data.frame() %>%
+  mutate(patient_ID = row.names(.)) %>% 
+  left_join(covid_lookup %>% 
+              select(patient_ID, vital_des, proteo_pctseqs, entero_pctseqs)) %>% 
+  select(patient_ID, V1, V2, vital_des, proteo_pctseqs, entero_pctseqs) %>% 
+  mutate(proteo_col = case_when(proteo_pctseqs >= 0.05 ~ 0.5,
+                                TRUE ~ 0),
+         entero_col = case_when(entero_pctseqs > 0.30 ~ 0.5,
+                                TRUE ~ 0),
+         no_dom_col = case_when(proteo_pctseqs < 0.05 & entero_pctseqs < 0.30 ~ 1,
+                                TRUE ~ 0)) %>% 
+  pivot_longer(cols=c(proteo_col,entero_col,no_dom_col),names_to = "colorby",values_to = "amount") %>% 
+  mutate(colorby = factor(colorby, levels = c("proteo_col", "entero_col", "no_dom_col"))) #%>%  
+
+umap_mat_plot_colors <-
+ggplot(umap_mat_plot_colors_df)+
+    ggforce::geom_arc_bar(aes(
+      x0 = V1,
+      y0 = V2,
+      r0 = 0,
+      r = .15,
+      amount = amount,
+      fill = colorby,
+      color = colorby
+    ), stat = "pie", n = 360, alpha = 0.4, size = 0.01)+
+  annotate("text", x = -0.75, y = 3.5, label = paste0("Chisq(", chisq$parameter, ")=", 
+                                                   round(chisq$statistic, 2), "; p=", round(chisq$p.value, 3)),
+           size = 4) +
+  stat_ellipse(data = umap_mat_plot_colors_df %>% 
+                 group_by(patient_ID) %>% 
+                 dplyr::slice_max(amount) %>% 
+                 filter(colorby == "proteo_col"), inherit.aes = F,
+               aes(x = V1, y = V2, color = colorby),
+               type = "t") +
+  stat_ellipse(data = umap_mat_plot_colors_df %>% 
+                 group_by(patient_ID) %>% 
+                 dplyr::slice_max(amount) %>% 
+                 filter(colorby == "proteo_col"), inherit.aes = F,
+               geom = "polygon", 
+               aes(x = V1, y = V2, fill = colorby),
+               color = "black",
+               alpha = 0.35,
+               type = "euclid", level = 0.25, show.legend = F) +
+  theme_bw() +
+  theme(panel.grid = eb(),
+        axis.title = et(color = "black", size = 14),
+        axis.text = et(color = "black", size = 12),
+        legend.title = et(color = "black", size = 14),
+        legend.text = et(color = "black", size = 12),
+        plot.margin = margin(t = 0,  # Top margin
+                             r = 0,  # Right margin
+                             b = 0,  # Bottom margin
+                             l = 0)) + # Left margin) +
+  # ggtitle(paste0("Shotgun Taxonomy: UMAP \nCOVID-19 Microbiota Dominations \n", "n = ", nrow(umap_mat), "\n", custom_config$n_neighbors, " Neighbors")) +
+  xlab("UMAP1") +
+  ylab("UMAP2") +
+  scale_fill_manual(labels = c("Proteobacteria >= 5%", "Enterococcus >= 30%", "No Dominations"),
+                    values = c("proteo_col"="red","entero_col"="#129246","no_dom_col" = "gray"))+
+  scale_color_manual(labels = c("Proteobacteria >= 5%", "Enterococcus >= 30%", "No Dominations"),
+                    values = c("proteo_col"="red","entero_col"="#129246","no_dom_col" = "gray"))+
+  guides(fill = guide_legend(title = "Microbiota Composition"),
+         color = guide_legend(title = "Microbiota Composition"))+
+    lims(x = c(-2.75, 3.6),   # obtained from umap below: ggplot_build(umap_mat_plot_colors)$layout$panel_scales_x[[1]]$range$range
+         y = c(-2.614908, 3.500000))+ # obtained from umap below: ggplot_build(umap_mat_plot_colors)$layout$panel_scales_y[[1]]$range$range
+  coord_equal()
+umap_mat_plot_colors
+#### UMAP Plot 2 END ####
+
+
+#### UMAP Plot 1 + Plot 2 START ####
+pdf("./Results/shotgun_umap_umap_doms_vital.pdf", height = 6, width = 14)
+cowplot::plot_grid(umap_mat_plot, 
+                   umap_mat_plot_colors,
+                   nrow = 1, rel_widths = c(1, 1.134))
+dev.off()
+#### UMAP Plot 1 + Plot 2 END ####
+
+
+#### LEfSe START ####
+# Custom function for nomenclature
+genus_species <- function(x) {
+  sstr <- str_split(x,"\\|")[[1]]
+  sstr <- gsub("_+$"," sp.",sstr)
+  return(paste0(sstr[length(sstr)-1], "|",sstr[length(sstr)]))
+}
+
+# Relative abundance dataframe to combine on LEfSe plot
+shotgun_rel_abd <-  
+covid_kraken %>% 
+  left_join(proteo) %>% 
+  arrange(Kingdom, Phylum, Class, Order, Family, Genus) %>% 
+  mutate(Genus = factor(Genus, levels = unique(Genus))) %>% 
+  group_by(patient_ID) %>%
+  arrange(Genus) %>%
+  mutate(cum.pct = cumsum(pctseqs),
+         y.text = (cum.pct + c(0, cum.pct[-length(cum.pct)]))/2) %>%
+  ungroup() %>%
+  dplyr::select(-cum.pct) %>%
+  mutate(pctseqs_100 = pctseqs*100,
+         log10_rel = log(pctseqs_100, base = 10)) %>% 
+  mutate(phylogeny = paste(Kingdom, Phylum, Class, Order, Family, Genus, Species, sep = " | "),
+         phylogeny = sapply(phylogeny, genus_species),
+         phylogeny = gsub(pattern =  "\\s+\\|\\s+$", replacement = "", x = phylogeny)) %>% 
+  filter(phylogeny != "  | ") %>% 
+  left_join(covid_lookup %>% 
+              select(patient_ID, vital_des)) %>% 
+  dplyr::rename(feature = taxid)
+
+# Build phyloseq object from shotgun data
+# This is the shotgun taxonomy (otu table)
+shotgun_otu <- covid_kraken %>%
+  mutate(Genus=paste(Kingdom,Phylum,Class,Order,Family,Genus,sep="|")) %>%
+  group_by(patient_ID) %>%
+  mutate(total=sum(numseqs)) %>%
+  group_by(patient_ID,total,Kingdom,Phylum,Class,Order,Family,Genus,Species,taxid) %>%
+  reshape2::dcast(patient_ID ~ taxid,value.var="numseqs",fill=0,fun.aggregate=sum) %>% 
+  arrange(desc(patient_ID)) %>% 
+  column_to_rownames(var = "patient_ID") %>% 
+  t()
+
+samp_covid <- sample_data(covid_lookup %>% 
+                            select(patient_ID, vital_des) %>% 
+                            column_to_rownames(var = "patient_ID")
+                          )
+  
+# Shotgun_otu phyloseq data building
+shotgun_otu_2 <- otu_table(shotgun_otu, taxa_are_rows = T)
+
+taxmat <- matrix(sample(letters, nrow(shotgun_otu), replace = TRUE), nrow = nrow(shotgun_otu), ncol = 7)
+rownames(taxmat) <- rownames(shotgun_otu)
+colnames(taxmat) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+
+
+tax_tbl <- tax_table(taxmat)
+
+phy_shotgun_otu_2 <- phyloseq(shotgun_otu_2, tax_tbl, samp_covid)
+
+# Build a lookup 
+shotgun_lefse_lookup <- tax_table(phy_shotgun_otu_2) %>% 
+  as.matrix() %>% 
+  as.data.frame() %>% 
+  rownames_to_column(var = "taxid") %>% 
+  mutate(taxid = as.integer(taxid)) %>% 
+  select(taxid) %>% 
+  left_join(tax_lookup) %>% 
+  mutate(phylogeny = paste(Kingdom, Phylum, Class, Order, Family, Genus, Species, sep = " | ")) %>%
+  select(taxid, phylogeny)
+
+# Run LEfSe analysis using shotgun taxonomy
+set.seed(123)
+phy_shotgun_otu_lefse <- run_lefse(
+  ps = phy_shotgun_otu_2,
+  group = "vital_des",
+  subgroup = NULL,
+  taxa_rank = "none",
+  transform = "identity",
+  norm = "CPM",
+  kw_cutoff = 0.05,
+  lda_cutoff = 3,
+  bootstrap_n = 30,
+  bootstrap_fraction = 2/3,
+  wilcoxon_cutoff = 0.05,
+  multigrp_strat = FALSE,
+  sample_min = 5,
+  only_same_subgrp = FALSE,
+  curv = FALSE)
+
+# phy_shotgun_otu_lefse@marker_table %>% view
+
+# Plot LEfSe results
+phy_shotgun_otu_lefse_df <- phy_shotgun_otu_lefse@marker_table
+
+gg_lefse_rel_abd <-
+phy_shotgun_otu_lefse_df %>% 
+  as.matrix() %>% 
+  as.data.frame() %>% 
+  mutate(
+         ef_lda_sign = ifelse(enrich_group == "Alive", ef_lda, as.numeric(paste0("-",ef_lda))),
+         ef_lda_sign = as.numeric(ef_lda_sign),
+         ef_lda = as.numeric(ef_lda),
+         pvalue = as.numeric(pvalue),
+         padj = as.numeric(padj)) %>% 
+  left_join(shotgun_lefse_lookup %>% 
+              mutate(taxid = as.character(taxid)) %>% 
+              dplyr::rename(feature = taxid)) %>% 
+  mutate(phylogeny = sapply(phylogeny, genus_species)) %>% 
+  filter(phylogeny != "  | ") %>% 
+  group_by(phylogeny) %>% 
+  slice_min(padj, n = 1, with_ties = F) %>% 
+  mutate(phylogeny = gsub(pattern =  "\\s+\\|\\s+$", replacement = "", x = phylogeny)) %>% 
+  full_join(shotgun_rel_abd %>% 
+              mutate(feature = as.character(feature)) %>% 
+              select(-phylogeny),
+            by = "feature")
+
+gg_lefse <- gg_lefse_rel_abd %>% 
+  filter(enrich_group == vital_des) %>%  
+   group_by(enrich_group, feature) %>% 
+   dplyr::slice(1) %>% 
+   ungroup()
+
+tax_melt <- yingtools2::get.otu.melt(phy_shotgun_otu_lefse, filter.zero = FALSE) %>% 
+  dplyr::mutate(taxid = as.character(otu)) %>% 
+  filter(taxid %in% phy_shotgun_otu_lefse_df[[1]]) %>% 
+  left_join(gg_lefse %>% 
+              select(feature, phylogeny, ef_lda), by = c("taxid"="feature"))  %>% 
+  filter(!is.na(ef_lda))
+
+
+pdf("./Results/shotgun_otu_lefse_analysis.pdf", height = 8, width = 14)
+# Print Plot and save plot object to combine with other plots
+gg_lefse_plot <-
+gg_lefse %>% 
+  ggplot(.,
+         aes(
+           x = reorder(phylogeny, -ef_lda_sign),
+           y = ef_lda_sign,
+           fill = enrich_group,
+           label = phylogeny
+         )) +
+  geom_col(color = "black", alpha = 0.8) +
+  geom_text(
+    nudge_y = ifelse(gg_lefse$ef_lda_sign > 0, 0.25, -0.25),
+    hjust = ifelse(gg_lefse$ef_lda_sign > 0, 0, 1),
+    size = 3.5
+  ) +
+  theme_bw()+
+    theme(
+      panel.grid.minor = eb(),
+      panel.grid.major.y = eb(),
+      panel.border = eb(),
+      panel.grid.major.x = element_line(linetype="dotted", color = "grey75"),
+      axis.text.y = eb(),
+      axis.text.x = et(size = 12, color = "black"),
+      axis.title = et(size = 14, color = "black"),
+      axis.ticks.y = eb(),
+      legend.title = et(size = 14, color = "black"),
+      legend.text = et(size = 12, color = "black"),
+      plot.title = et(size = 16, color = "black")
+    )+ 
+    ggsci::scale_fill_lancet() +
+    scale_y_continuous(breaks = seq(-5,5,1),
+                       limits = c(-8.5, 8.5))+
+    coord_flip() +
+    ylab("\nLDA Score (log10)") +
+    xlab("Phylogeny\n") +
+    labs(fill = "Vital Status")
+
+gg_lefse_plot
+
+dev.off()
+
+#### LEfSe END ####
+
+
+#### Combine Plots Together START ####
+
+# Load legend
+tax_legend <- magick::image_read_pdf("./Results/legend.v2.pdf")
+
+gg_tax_legend <- ggdraw() + draw_image(tax_legend)
+
+pdf("./Results/Figure_1.pdf", height = 14, width = 14)
+
+gridExtra::grid.arrange(
+  proteo_grob,             # 1
+  gg_tax_legend,           # 2
+  gg_alpha_total,          # 3
+  umap_mat_plot,           # 4
+  umap_mat_plot_colors,    # 5
+  gg_lefse_plot,           # 6
+    layout_matrix = rbind(c(1,1,1,1, NA,  3,3,3),
+                        c(1,1,1,1, NA,  3,3,3),
+                        c(1,1,1,1, NA,  3,3,3),
+                        c(1,1,1,1,  2,  3,3,3),
+                        c(1,1,1,1,  2,  3,3,3),
+                        c(1,1,1,1,  2,  3,3,3),
+                        c(1,1,1,1,  2,  3,3,3),
+                        c(1,1,1,1, NA,  3,3,3),
+                        c(1,1,1,1, NA,  3,3,3),
+                        c(1,1,1,1, NA,  3,3,3),
+                        c(4,4,4,4, 5,5,5,5),
+                        c(4,4,4,4, 5,5,5,5),
+                        c(4,4,4,4, 5,5,5,5),
+                        c(4,4,4,4, 5,5,5,5),
+                        c(4,4,4,4, 5,5,5,5),
+                        c(4,4,4,4, 5,5,5,5),
+                        c(4,4,4,4, 5,5,5,5),
+                        c(6,6,6,6,6,6,6,6),
+                        c(6,6,6,6,6,6,6,6),
+                        c(6,6,6,6,6,6,6,6),
+                        c(6,6,6,6,6,6,6,6),
+                        c(6,6,6,6,6,6,6,6),
+                        c(6,6,6,6,6,6,6,6),
+                        c(6,6,6,6,6,6,6,6),
+                        c(6,6,6,6,6,6,6,6),
+                        c(6,6,6,6,6,6,6,6),
+                        c(6,6,6,6,6,6,6,6),
+                        c(6,6,6,6,6,6,6,6),
+                        c(6,6,6,6,6,6,6,6),
+                        c(6,6,6,6,6,6,6,6),
+                        c(6,6,6,6,6,6,6,6))
+)
+
+dev.off()
+
+
+```
+
+### Figure 4A: Cutpoint Analysis
+```{r, score-roc, fig.dim=c(10,8), message=FALSE, warning=FALSE}
+# Cutpoint dataframe
+cutpoints_df <- metab_quant %>% 
+  left_join(covid_lookup %>% 
+              select(patient_ID, vital_status))
+
+# Optimal cutpoints
+# Create function to handle any errors during map function
+safe_cutpointr <- possibly(.f = cutpointr, otherwise = "Error")
+
+set.seed(123456)
+cutpoints <-
+cutpoints_df %>% 
+  group_by(compound) %>% 
+  group_map(~ safe_cutpointr(., mvalue, vital_status, compound, 
+                             method = maximize_metric, 
+                             metric = youden,
+                             pos_class = 0,
+                             neg_class = 1,
+                             boot_runs = 2,
+                             use_midpoints = TRUE,
+                             na.rm = T), 
+            .keep = TRUE)
+
+cutpoints_unnest <- cutpoints %>% 
+  map_df(as_tibble)
+
+# Summary table
+cutpoints_unnest_summary <-
+  cutpoints_unnest %>% 
+  group_by(subgroup, pos_class) %>% 
+  summarize(top_auc = max(AUC)) %>%
+  filter(top_auc == max(top_auc)) %>% 
+  arrange(-top_auc)
+
+
+##### ROC Plots START #####
+# Plot ROC curves
+cutpoints_unnest %>% 
+  arrange(desc(AUC)) %>% 
+  group_by(pos_class) %>%
+  ungroup() %>% 
+  unnest(roc_curve) %>% 
+  arrange(desc(AUC)) %>% 
+  mutate(auc_label = paste0("AUC = ",round(AUC,5))) %>% 
+  ggplot(aes(x = fpr, y = tpr))+
+  geom_line()+
+  geom_text(aes(label = auc_label, x = 0.6, y = 0.2))+
+  geom_text(aes(label = round(optimal_cutpoint, 3), y = 0.8, x = 0.2))+
+  facet_wrap(~subgroup+pos_class)
+
+# Plot top results
+cutpoints_unnest %>% 
+  mutate(tvalue = as.numeric(str_extract(string = pos_class, pattern = "[0-9]\\.[0-9]+|[0-9]+")),
+         variable = gsub("\\s<=.*", "", pos_class)) %>%
+  separate(subgroup, c('group1', 'group2'), sep="__", remove = FALSE) %>%
+  select(-boot) %>% 
+  mutate(group_ratio = if_else(!is.na(group2), paste(group1, group2, sep = " : "), group1)) %>% 
+  arrange(desc(AUC)) %>% 
+  group_by(pos_class) %>%
+  group_by(tvalue, variable, subgroup, group_ratio, pos_class) %>% 
+  summarize(top_auc = max(AUC)) %>% 
+  ungroup() %>% 
+  arrange(desc(top_auc)) %>% 
+  group_by(tvalue, pos_class) %>% 
+  arrange(pos_class, tvalue, subgroup, group_ratio) %>% 
+  droplevels() %>% 
+  mutate(variable = "Predicting Outcomes: Alive vs Deceased") %>% 
+  ggplot()+
+  geom_bar(aes(x = reorder(group_ratio, -top_auc), y = top_auc, fill = group_ratio), 
+           stat = "identity", position = "dodge")+
+  geom_hline(yintercept = 0.9)+
+  geom_hline(yintercept = 0.8)+
+  geom_hline(yintercept = 0.7)+
+  shadowtext::geom_shadowtext(aes(x = group_ratio, y = top_auc/2.5, angle = 90, label = group_ratio), size = 4)+
+  shadowtext::geom_shadowtext(aes(x = group_ratio, y = top_auc * 1.015, label = round(top_auc, 2)))+
+  theme_bw() +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank(),
+        strip.text = element_text(size = 14, color = "black"),
+        axis.text.y = element_text(size = 12, color = "black"),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.title.y = element_text(size = 14, color = "black"),
+        axis.title.x = element_blank(),
+        legend.title = element_text(size = 14, color = "black"),
+        legend.text = element_text(size = 12, color = "black", hjust = 0),
+        legend.position = "none") +
+  ggsci::scale_fill_igv()+
+  xlab("\nMetabolite Concentration") +
+  ylab("AUC\n") +
+  scale_y_continuous(limits = c(0,1), breaks = seq(0,1,0.1))+
+  guides(fill = guide_legend(ncol = 1))+
+  labs(fill = "Metabolite Concentration")+
+  ggtitle("Predicting COVID-19 Outcomes: Alive vs Deceased")+
+  facet_grid(~variable) 
+##### ROC Plots END #####
+
+# Build dataframe to use cutpoints
+cutpoints_results <-
+  cutpoints_df %>%
+  left_join(
+    cutpoints_unnest %>%
+      dplyr::rename(compound = subgroup) %>%
+      select(compound, direction, optimal_cutpoint)
+  ) %>%
+  mutate(
+    cutpoint_prediction = case_when(
+      compound == "deoxycholic acid" &
+        mvalue >= optimal_cutpoint ~ 0,
+      compound == "isodeoxycholic acid" &
+        mvalue >= optimal_cutpoint ~ 0,
+      compound == "lithocholic acid" &
+        mvalue >= optimal_cutpoint ~ 0,
+      compound == "desaminotyrosine" &
+        mvalue >= optimal_cutpoint ~ 0,
+      TRUE ~ 1
+    )
+  ) %>%
+  group_by(patient_ID, compound) %>%
+  mutate(mmp_score = sum(cutpoint_prediction)) %>%
+  dplyr::slice(1) %>% 
+  pivot_wider(
+      c(vital_status, patient_ID),
+    names_from = "compound",
+    values_from = "cutpoint_prediction"
+  )  %>% 
+  column_to_rownames(var = "patient_ID") %>% 
+  relocate(vital_status, .after = last_col()) %>% 
+  mutate(vital_status = as.factor(vital_status))
+
+
+cutpoints_results_var_slct <-
+cutpoints_df %>%
+  left_join(
+    cutpoints_unnest %>%
+      dplyr::rename(compound = subgroup) %>%
+      select(compound, direction, optimal_cutpoint)
+  ) %>%
+  mutate(
+    cutpoint_prediction = case_when(
+      compound == "deoxycholic acid" &
+        mvalue >= optimal_cutpoint ~ 0,
+      compound == "isodeoxycholic acid" &
+        mvalue >= optimal_cutpoint ~ 0,
+      compound == "lithocholic acid" &
+        mvalue >= optimal_cutpoint ~ 0,
+      compound == "desaminotyrosine" &
+        mvalue >= optimal_cutpoint ~ 0,
+      TRUE ~ 1
+    )
+  ) %>%
+  filter(compound %in% c("deoxycholic acid", "isodeoxycholic acid", "lithocholic acid", "desaminotyrosine")) %>% 
+  group_by(patient_ID, vital_status) %>%
+  summarize(mmp_score = sum(cutpoint_prediction))
+
+# ROC curve for MMP Score using training data
+# par(pty = "s")
+# n = c(4, 3, 5) 
+# b = c(TRUE, FALSE, TRUE)
+pROC_obj <- roc(
+  cutpoints_results_var_slct$vital_status,
+  cutpoints_results_var_slct$mmp_score,
+  smoothed = TRUE,
+  ci = TRUE,
+  plot = TRUE,
+  auc.polygon = TRUE,
+  # max.auc.polygon = TRUE,
+  best.method = TRUE,
+  print.auc = TRUE,
+  print.auc.col = "black",
+  # print.thres = "all",
+  # print.thres.col = "darkblue",
+  col = "darkblue",
+  auc.polygon.border = "black",
+  auc.polygon.col = "lightblue",
+  print.thres.best.method = "youden"
+)
+
+coordinates <- coords(pROC_obj, "best", ret=c("threshold", "sens", "spec", "ppv", "npv"))
+
+
+cairo_pdf("./Results/Figure_4A.pdf", width = 8, height = 6)
+pROC_obj <- roc(
+  cutpoints_results_var_slct$vital_status,
+  cutpoints_results_var_slct$mmp_score,
+  smoothed = TRUE,
+  ci = TRUE,
+  plot = TRUE,
+  auc.polygon = TRUE,
+  # max.auc.polygon = TRUE,
+  best.method = TRUE,
+  print.auc = TRUE,
+  print.auc.col = "black",
+  # print.thres = "all",
+  # print.thres.col = "darkblue",
+  col = "darkblue",
+  auc.polygon.border = "black",
+  auc.polygon.col = "lightblue",
+  print.thres.best.method = "youden"
+)
+text(paste("PPV:", round(coordinates$ppv,2)), x = 0.41, y = 0.45)
+text(paste("NPV:", round(coordinates$npv,2)), x = 0.41, y = 0.41)
+text(paste("Threshold:", round(coordinates$threshold,2)), x = 0.385, y = 0.37)
+dev.off()
+```
+
+### Figure 4B: Survival Analysis
+```{r, survival-analysis, fig.dim=c(10,12), message=FALSE, warning=FALSE}
+# Create Score Groupings
+covid_lookup2 <- covid_lookup %>%
+  full_join(cutpoints_results_var_slct %>% 
+              select(mmp_score, patient_ID)) %>% 
+  mutate(grouped_mmp_score = ifelse(mmp_score >= coords(pROC_obj, "best", ret=c("threshold", "sens", "spec", "ppv", "npv"))[1][[1]], "High Score", "Low Score"))
+
+# KM Curves
+set.seed(123)
+surv_object <- Surv(time = covid_lookup2$SurvTime, event = covid_lookup2$vital_status)
+
+fit1 <- survfit(surv_object~covid_lookup2$grouped_mmp_score, data = covid_lookup2)
+
+ggs <- ggsurvplot(
+  fit1,
+  data = covid_lookup2,
+  size = 1, 
+  palette = c("blue4","salmon"),
+  conf.int = TRUE,                   
+  pval = TRUE,                        
+  risk.table = TRUE,
+  risk.table.height = 0.25,
+  ggtheme = theme_bw(),
+  risk.table.y.text.col = T, # adjusts margins 
+  risk.table.y.text = FALSE,
+  legend.labs = c("High MMP", "Low MMP"),
+)
+
+ggs
+
+pdf("./Results/Figure_4B.pdf", height = 6, width = 8, onefile = FALSE)
+ggs
+dev.off()
+
+# Percent survival
+summary(fit1, times=248)
+# High MMP = 10.7%
+# Low MMP = 66.5%
+```
+
+### Figure 5: Flow Chart
+```{r, flow-chart, fig.dim=c(10,12), message=FALSE, warning=FALSE}
+# Flow chart
+ggstream <- covid_flow %>%
+  mutate(
+    Respiratory.Support = as.factor(Respiratory.Support),
+    Respiratory.Support = factor(
+      Respiratory.Support,
+      levels = c(
+        "Room Air",
+        "NIPPV",
+        "Low Flow",
+        "High Flow",
+        "Mechanical Ventilation",
+        "Tracheostomy"
+      )
+    )
+  ) %>%
+  ggplot(aes(y = patient_ID)) +
+  geom_segment(aes(
+    x = startday,
+    xend = stopday,
+    yend = patient_ID,
+    color = Respiratory.Support
+  ),
+  size = 2) +
+  geom_point(aes(x = los, y = patient_ID, shape = Discharge.Location), size = 3) +
+  geom_point(
+    aes(x = collect_days, y = patient_ID),
+    fill = "skyblue",
+    shape = 21,
+    size = 3
+  ) +
+  theme_bw() +
+  theme(
+    strip.text = element_text(size = 10),
+    axis.text.y = eb(),
+    axis.ticks.y = eb(),
+    axis.text.x = et(color = "black", size = 12),
+    axis.title.x = et(color = "black", size = 14),
+    panel.grid.major.y = eb()
+  ) +
+  facet_grid(Transition ~ ., scales = "free", space = "free") +
+  ylab("") +
+  scale_color_manual(values = c("#008a00",
+                                "#67d667",
+                                "#FFE099FF",
+                                "#F76D5EFF",
+                                "#A50021FF",
+                                "grey85")) +  #assigns color
+  # ggtitle("High Flow Nasal Cannula Success Versus Failure") +
+  coord_cartesian(xlim = c(-7, 100)) +
+  xlab("Days Relative to ICU admission") +
+  geom_vline(aes(xintercept = 0), linetype = "dotted") +
+  guides(shape = guide_legend("Discharge Location"),
+         color = guide_legend("Respiratory Support")) +
+  scale_x_continuous(expand = c(0, 0))
+
+ggstream
+
+ggsave(filename ="./Results/Figure_5.pdf", ggstream, height = 10, width = 10)
+```
+
+### Figure 2A: CARD Analysis
+```{r, card-genes, fig.dim=c(12,14), message=FALSE, warning=FALSE}
+card_dict <- card_dict %>% 
+  filter(dbsource == "card") %>% 
+  mutate(
+    AMRGeneFamily = ifelse(
+      AMRGeneFamily == "glycopeptide resistance gene cluster;van ligase",
+      "glycopeptide resistance gene cluster;vanA",
+      AMRGeneFamily
+    ),
+    AMRGeneFamily = gsub(
+      pattern = ";",
+      replacement = "\n",
+      x = AMRGeneFamily
+    )
+  )
+
+card <- card %>% 
+  right_join(covid_lookup %>% select(patient_ID, vital_status))
+
+card_tot <- card %>% 
+  inner_join(card_dict) %>% 
+  full_join(covid_lookup %>% select(patient_ID, vital_status))
+
+
+card_tot_0 <-
+  card_tot %>% 
+  group_by(patient_ID, ModelName) %>% 
+  mutate(rpkm_mean = mean(rpkm)) %>% 
+  dplyr::slice_max(rpkm_mean, n = 1, with_ties = F) %>% 
+  ungroup() %>%
+  pivot_wider(c(patient_ID, rpkm_mean), names_from = "ModelName", values_from = "rpkm") %>% 
+  mutate_if(is.numeric, ~replace(., is.na(.), 0)) %>% 
+  select(where(~ any(. != 0))) %>% 
+  pivot_longer(-c(patient_ID, rpkm_mean), names_to = "ModelName", values_to = "rpkm") %>% 
+  group_by(patient_ID, ModelName) %>% 
+  slice_max(rpkm, n = 1, with_ties = F) %>% 
+  ungroup() %>% 
+  right_join(covid_lookup %>% select(patient_ID, vital_des)) %>% 
+  drop_na(vital_des)
+
+card_tot_0_family <-
+  card_tot %>% 
+  group_by(patient_ID, AMRGeneFamily) %>% 
+  mutate(rpkm_sum = sum(rpkm)) %>% 
+  dplyr::slice_max(rpkm_sum, n = 1, with_ties = F) %>% 
+  ungroup() %>%
+  pivot_wider(c(patient_ID, rpkm_sum), names_from = "AMRGeneFamily", values_from = "rpkm") %>% 
+  mutate_if(is.numeric, ~replace(., is.na(.), 0)) %>% 
+  select(where(~ any(. != 0))) %>% 
+  pivot_longer(-c(patient_ID, rpkm_sum), names_to = "AMRGeneFamily", values_to = "rpkm") %>% 
+  group_by(patient_ID, AMRGeneFamily) %>% 
+  slice_max(rpkm, n = 1, with_ties = F) %>% 
+  ungroup() %>% 
+  right_join(covid_lookup %>% select(patient_ID, vital_des)) %>% 
+  drop_na(vital_des)
+
+  
+# Perform stats to find any significant differences
+card_tot_0_stats <-
+  card_tot_0 %>% 
+  drop_na() %>% 
+  mutate(vital_des = as.factor(vital_des)) %>% 
+  group_by(ModelName) %>% 
+  rstatix::wilcox_test(rpkm~vital_des, p.adjust.method = "none") %>% 
+  rstatix::adjust_pvalue(method = "BH")
+
+card_tot_0_mat <-
+card_tot %>% 
+  group_by(patient_ID, ModelName) %>% 
+  mutate(rpkm_mean = mean(rpkm)) %>% 
+  dplyr::slice_max(rpkm_mean, n = 1, with_ties = F) %>% 
+  ungroup() %>%
+  pivot_wider(c(patient_ID), names_from = "ModelName", values_from = "rpkm") %>% 
+  mutate_if(is.numeric, ~replace(., is.na(.), 0)) %>% 
+  select(where(~ any(. != 0))) %>% 
+  column_to_rownames(var = "patient_ID")
+  
+
+# Heatmap legend color
+col_fun2 <- colorRamp2(breaks = c(0, 100), colors = c("white", "#ad003a"))
+
+ht_global_opt(legend_title_gp = gpar(fontsize = 10, fontface = "bold"), legend_labels_gp = gpar(fontsize = 8))
+
+# Create vital labels (Alive vs Deceased)
+card_heatmap_labels <- 
+  card_tot_0_mat %>% 
+  rownames_to_column(var = "patient_ID") %>% 
+  left_join(covid_lookup %>% select(patient_ID, vital_des)) %>% 
+  select(vital_des) %>% 
+  mutate(vital_des = factor(vital_des, levels = c("Deceased","Alive")))
+
+# Create groupings of CARD classes
+card_heatmap_groups <- 
+  card_tot_0_mat %>% 
+  t() %>%
+  as.data.frame() %>% 
+  rownames_to_column(var = "ModelName") %>% 
+  left_join(card_dict %>% select(ModelName, ResistanceMechanism)) %>% 
+  select(ResistanceMechanism)
+
+gg_card_heatmap <-
+card_tot_0_mat %>% 
+  t() %>%
+  Heatmap(
+    name = "RPKM",
+    col = col_fun2,
+    rect_gp = gpar(col = "black", lwd = 0.2),
+    column_names_gp = grid::gpar(fontsize = 8),
+    column_gap = unit(6, "mm"),
+    column_split = card_heatmap_labels,
+    column_title_gp = gpar(fontsize = 14),
+    column_title_rot = 0,
+    cluster_columns = TRUE,
+    show_column_names = FALSE,
+    show_column_dend = FALSE,
+    row_names_gp = gpar(fontsize = 4),
+    row_gap = unit(3.5, "mm"),
+    row_names_side = c("left"),
+    row_split = card_heatmap_groups$ResistanceMechanism,
+    row_title_rot = 0,
+    cluster_rows = TRUE,
+    show_row_dend = FALSE
+  )
+gg_card_heatmap
+
+pdf("./Results/card_heatmap_total.pdf", height = 60, width = 16, onefile = F)
+gg_card_heatmap
+dev.off()
+
+  
+# Perform stats to find any significant differences
+card_tot_0_family_stats <-
+  card_tot_0_family %>% 
+  drop_na() %>% 
+  mutate(vital_des = as.factor(vital_des)) %>% 
+  group_by(AMRGeneFamily) %>% 
+  rstatix::wilcox_test(rpkm~vital_des, p.adjust.method = "none") %>% 
+  rstatix::adjust_pvalue(method = "BH") %>% 
+  filter(p < 0.05)
+
+card_tot_0_family_mat <-
+card_tot %>% 
+  group_by(patient_ID, AMRGeneFamily) %>% 
+  mutate(rpkm_sum = sum(rpkm)) %>% 
+  dplyr::slice_max(rpkm_sum, with_ties = F) %>% 
+  ungroup() %>%
+  mutate(rpkm_sum = case_when(rpkm_sum == 0 ~ "0",
+                          between(rpkm_sum,  0, 10) ~ "0 - 10",
+                          between(rpkm_sum, 10, 50) ~ "10 - 50",
+                          between(rpkm_sum, 50, 100) ~ "50 - 100",
+                          TRUE ~ "100+"
+         )) %>% 
+  pivot_wider(c(patient_ID), names_from = "AMRGeneFamily", values_from = "rpkm_sum") %>% 
+  mutate_if(is.character, ~replace(., is.na(.), "0")) %>% 
+  pivot_longer(-patient_ID, names_to = "AMRGeneFamily", values_to = "rpkm_sum") %>% 
+  filter(AMRGeneFamily != "NA") %>% 
+  group_by(patient_ID) %>% 
+  mutate(rpkm_sum2 = ifelse(n_distinct(rpkm_sum) == 1, "ND", rpkm_sum)) %>% 
+  ungroup() %>% 
+  mutate(rpkm_sum = ifelse(rpkm_sum2 == "ND", "ND", rpkm_sum)) %>% 
+  right_join(card_tot_0_family_stats) %>% 
+  pivot_wider(c(patient_ID), names_from = "AMRGeneFamily", values_from = "rpkm_sum") %>% 
+  arrange(patient_ID) %>% 
+  column_to_rownames(var = "patient_ID")
+  
+
+# Create vital labels (Alive vs Deceased)
+card_family_heatmap_labels <- 
+  card_tot_0_family_mat %>% 
+  rownames_to_column(var = "patient_ID") %>% 
+  left_join(covid_lookup %>% select(patient_ID, vital_des)) %>% 
+  select(vital_des) %>% 
+  mutate(vital_des = factor(vital_des, levels = c("Deceased","Alive")))
+
+# Create groupings of CARD classes
+card_family_heatmap_groups <- 
+  card_tot_0_family_mat %>% 
+  t() %>%
+  as.data.frame() %>% 
+  rownames_to_column(var = "AMRGeneFamily") %>% 
+  left_join(card_dict %>% 
+              select(AMRGeneFamily, ResistanceMechanism) %>% 
+              group_by(AMRGeneFamily) %>% 
+              dplyr::slice(1)) %>% 
+  select(ResistanceMechanism) %>% 
+  mutate(ResistanceMechanism = str_to_title(ResistanceMechanism))
+
+# Create row annotation of CARD classes
+card_heatmap_signif <- 
+  card_tot_0_family_mat %>% 
+  t() %>% 
+  as.data.frame() %>% 
+  rownames_to_column(var = "AMRGeneFamily") %>% 
+  left_join(card_tot_0_family_stats) %>% 
+  select(AMRGeneFamily, p, p.adj) %>% 
+  column_to_rownames(var = "AMRGeneFamily")
+
+
+pvalue_col_fun = colorRamp2(c(0, 0.05), c("forestgreen", "grey90")) 
+
+# Create heatmap for unadjusted p-values
+card_unadj <-
+card_heatmap_signif %>%
+  select(`Unadjusted p-value` = p) %>% 
+  as.matrix() %>% 
+Heatmap(name = "Significance",
+        cluster_rows = FALSE,
+        cluster_columns = FALSE,
+        col = pvalue_col_fun,
+        column_title = "Unadjusted p-value",
+        column_title_rot = 0,
+        show_column_names = F,
+        column_names_side = "top",
+        rect_gp = gpar(col = "black", lwd = 0.2),
+        row_gap = unit(3.5, "mm"),
+        row_names_gp = gpar(fontsize = 8),
+        row_title_gp = gpar(fontsize = 0),
+        row_title_side = "right",
+        show_row_names = FALSE,
+        row_title_rot = 0,
+        row_split = card_family_heatmap_groups$ResistanceMechanism,
+        width = unit(0.15, "in")
+)
+
+# Create heatmap for adjusted p-values
+card_adj <-
+card_heatmap_signif %>% 
+  select(`Adjusted p-value` = p.adj) %>% 
+  as.matrix() %>% 
+Heatmap(name = "Significance2",
+        cluster_rows = FALSE,
+        cluster_columns = FALSE,
+        col = pvalue_col_fun,
+        column_title = "Adjusted p-value",
+        column_title_rot = 0,
+        show_column_names = FALSE,
+        column_names_side = "top",
+        rect_gp = gpar(col = "black", lwd = 0.2),
+        row_gap = unit(3.5, "mm"),
+        row_names_gp = gpar(fontsize = 8),
+        row_title_gp = gpar(fontsize = 8, fontface = "bold"),
+        row_title_side = "right",
+        show_row_names = FALSE,
+        row_title_rot = 0,
+        row_split = card_family_heatmap_groups$ResistanceMechanism,
+        width = unit(0.15, "in")
+        )
+
+
+gg_card_family_heatmap <-
+card_tot_0_family_mat %>% 
+  t() %>%
+  Heatmap(
+    name = "RPKM",
+    col = c("ND" = "gray80",
+            "0" = "#f0f4f5",
+            "0 - 10" = "#edb4de", 
+            "10 - 50" = "#db8cc6",
+            "50 - 100" = "#c96bb0",
+            "100+" = "#9c3380"),
+    rect_gp = gpar(col = "black", lwd = 0.2),
+    column_names_gp = grid::gpar(fontsize = 4),
+    column_gap = unit(6, "mm"),
+    column_split = card_family_heatmap_labels,
+    column_title_gp = gpar(fontsize = 14, just = "left"),
+    column_title_rot = 0,
+    cluster_columns = TRUE,
+    show_column_names = FALSE,
+    column_names_side = "top",
+    show_column_dend = FALSE,
+    row_names_gp = gpar(fontsize = 8),
+    row_title_gp = gpar(fontsize = 8, fontface = "bold"),
+    row_gap = unit(3.5, "mm"),
+    row_names_side = c("left"),
+    row_split = card_family_heatmap_groups$ResistanceMechanism,
+    row_title_rot = 0,
+    cluster_rows = TRUE,
+    show_row_dend = FALSE,
+    heatmap_width =  unit(12, "in")
+  )
+gg_card_family_heatmap
+
+gg_card_family_heatmap_tot <- gg_card_family_heatmap + card_unadj + card_adj
+gg_card_family_heatmap_tot
+
+pdf("./Results/card_heatmap_family.pdf", height = 8, width = 20, onefile = F)
+draw(gg_card_family_heatmap_tot, auto_adjust = F)
+dev.off()
+```
+
+### Figure 2C: Toxins Analysis
+```{r, toxins-genes, fig.dim=c(12,14), message=FALSE, warning=FALSE}
+# Create simple meta data (patient_ID and vital status) dataframe
+covid_lookup3 <- covid_lookup %>% 
+  select(patient_ID, vital_status)
+
+# Import toxin json file
+df_toxins <- rjson::fromJSON(file="./Data/ko02042.json")
+
+df_toxins <- as.data.frame(df_toxins[2]) %>% 
+  pivot_longer(everything()) %>% 
+  mutate(name = sub("[0-9]{1}","", name),
+         name = sub("[0-9]{1}","", name),
+         name = sub("(.*?)\\.$", "\\1", name))
+
+# Import unique KO ID list for covid patients
+df_ko_ids <- read.csv("./Data/ko_id.csv") %>% mutate(ko_id = gsub("ko:", "", ko_id))
+
+# Import all toxins list
+df_ko_toxins <- read.csv("./Data/KO_toxins_14Apr.csv") %>% 
+  dplyr::rename(KO = ko_id)
+
+# Load in all KEGG data
+emapper_toxins <- emapper %>%
+  full_join(covid_lookup %>% select(patient_ID)) %>% 
+  mutate(ko_id = gsub("ko:", "", ko_id)) %>%
+  filter(ko_id %in% df_ko_toxins$KO) %>% 
+  select(patient_ID, ko_id) %>% 
+  pivot_wider(names_from = "ko_id", 
+              values_from = 'ko_id', 
+              values_fill = 0,
+              values_fn = function(x) 1) %>% 
+  full_join(card_tot_0_family_mat %>% 
+              rownames_to_column(var = "patient_ID") %>% 
+              left_join(covid_lookup3) %>% 
+              distinct(patient_ID, vital_status), by="patient_ID") %>% 
+  replace(is.na(.), 3) %>% 
+  mutate(vital_status = ifelse(vital_status == "1", "Deceased", "Alive"),
+         vital_status = factor(vital_status, levels = c("Deceased", "Alive")))
+
+df_kos_matched <- df_ko_toxins %>% 
+  filter(KO %in% colnames(emapper_toxins))
+
+df_kos_matched <- df_kos_matched[order(df_kos_matched$KO),]
+
+# Chi-square analysis
+## Absence = 0
+## Presence = 1
+## Covid outcome: Alive = 0
+## Covid outcome: Deceased = 1
+tab <- xtabs(value ~ vital_status + variable, 
+             data = emapper_toxins %>% 
+               mutate(vital_status = ifelse(vital_status == "Alive", 0, 1)) %>% 
+               select(-patient_ID) %>% 
+               pivot_longer(!vital_status, names_to = "variable", values_to = "value"))
+
+tab_result <- apply(tab, 2, chisq.test)
+
+chi_df <-
+unlist(tab_result) %>% 
+  as.data.frame() %>% 
+  rownames_to_column(var = "KO") %>% 
+  filter(grepl(pattern = "p\\.value", x = KO)) %>% 
+  mutate(KO = gsub(pattern = "\\.p\\.value", replacement = "", x = KO)) %>% 
+  dplyr::rename(p = ".") %>% 
+  rstatix::adjust_pvalue(method = "BH")
+
+
+# Create heatmap for unadjusted p-values
+toxins_unadj <-
+chi_df %>%  
+  column_to_rownames(var = "KO") %>% 
+  mutate(p = as.numeric(p)) %>% 
+  select(`Unadjusted p-value` = p) %>% 
+  as.matrix() %>% 
+Heatmap(name = "Significance",
+        cluster_rows = FALSE,
+        cluster_columns = FALSE,
+        col = pvalue_col_fun,
+        column_title = "Unadjusted p-value",
+        column_title_rot = 0,
+        show_column_names = FALSE,
+        column_names_side = "top",
+        rect_gp = gpar(col = "black", lwd = 0.2),
+        row_gap = unit(3.5, "mm"),
+        row_names_gp = gpar(fontsize = 8),
+        row_title_gp = gpar(fontsize = 0),
+        row_title_side = "right",
+        show_row_names = FALSE,
+        row_title_rot = 0,
+        width = unit(0.15, "in")
+)
+
+# Create heatmap for adjusted p-values
+toxins_adj <-
+chi_df %>% 
+  column_to_rownames(var = "KO") %>% 
+  select(`Adjusted p-value` = p.adj) %>% 
+  as.matrix() %>% 
+Heatmap(name = "Significance2",
+        cluster_rows = FALSE,
+        cluster_columns = FALSE,
+        col = pvalue_col_fun,
+        column_title = "Adjusted p-value",
+        column_title_rot = 0,
+        show_column_names = FALSE,
+        column_names_side = "top",
+        rect_gp = gpar(col = "black", lwd = 0.2),
+        row_gap = unit(3.5, "mm"),
+        row_names_gp = gpar(fontsize = 8),
+        row_title_gp = gpar(fontsize = 0),
+        row_title_side = "right",
+        show_row_names = FALSE,
+        row_title_rot = 0,
+        width = unit(0.15, "in")
+        )
+
+
+# Heatmap legend color
+col_fun3 <- structure(c("#f0f4f5", "#4689ab", "gray80"), names = c("0", "1", "3"))
+
+temp <- emapper_toxins %>%
+  full_join(covid_lookup %>% select(patient_ID)) %>% 
+  arrange(patient_ID) %>% 
+  column_to_rownames(var = "patient_ID") %>% 
+  select(-vital_status) %>% 
+  mutate_if(is.numeric, ~replace(., is.na(.), 0))
+
+temp <- t(temp)
+temp <- temp[order(rownames(temp)),]
+temp <- cbind(df_kos_matched, temp)
+rownames(temp) <- paste0(temp$KO,": ",temp$description)
+
+gg_toxin_heatmap <- 
+  Heatmap(
+  data.matrix(temp[,5:length(temp)]),
+  name = "Toxins Presence/Absence",
+  heatmap_legend_param = list(
+    labels = c("Absent", "Present", "ND")),
+  col = col_fun3,
+  rect_gp = gpar(col = "black", lwd = 0.2),
+  column_names_gp = grid::gpar(fontsize = 8),
+  column_gap = unit(6, "mm"),
+  column_split = emapper_toxins$vital_status,
+  column_title_gp = gpar(fontsize = 14),
+  column_title_rot = 0,
+  cluster_columns = FALSE,
+  show_column_names = FALSE,
+  show_column_dend = FALSE,
+  row_names_gp = gpar(fontsize = 8),
+  row_gap = unit(3.5, "mm"),
+  row_names_side = c("left"),
+  row_title_rot = 0,
+  cluster_rows = FALSE,
+  show_row_dend = FALSE,
+  heatmap_width = unit(11, "in")
+)
+gg_toxin_heatmap
+
+gg_toxin_heatmap_tot <- gg_toxin_heatmap + toxins_unadj + toxins_adj
+gg_toxin_heatmap_tot
+
+pdf("./Results/toxins_heatmap.pdf", height = 2.9, width = 16)
+gg_toxin_heatmap_tot
+dev.off()
+```
+
+### Figure 2B: Bacteriocins Analysis
+```{r, bacteriocins-genes, fig.dim=c(12,14), message=FALSE, warning=FALSE}
+bactocin_covid <- bactocin %>% 
+  full_join(covid_lookup %>% select(patient_ID, vital_status)) 
+
+# Fill Clusters that have no mapped reads with 0s
+bactocin_covid_tot_0 <-
+  bactocin_covid %>% 
+  dplyr::rename(Cluster = `Most similar known cluster`) %>% 
+  group_by(patient_ID, Cluster) %>% 
+  mutate(rpkm_mean = mean(rpkm)) %>% 
+  dplyr::slice_max(rpkm_mean, n = 1, with_ties = F) %>% 
+  ungroup() %>%
+  pivot_wider(c(patient_ID, rpkm_mean), names_from = "Cluster", values_from = "rpkm") %>% 
+  mutate_if(is.numeric, ~replace(., is.na(.), 0)) %>% 
+  select(where(~ any(. != 0))) %>% 
+  pivot_longer(-c(patient_ID, rpkm_mean), names_to = "Cluster", values_to = "rpkm") %>% 
+  group_by(patient_ID, Cluster) %>% 
+  slice_max(rpkm, n = 1, with_ties = F) %>% 
+  ungroup() %>% 
+  right_join(covid_lookup %>% select(patient_ID, vital_des)) %>% 
+  drop_na(vital_des)
+
+
+# Perform stats to find any significant differences
+bactocin_covid_tot_0_stats <-
+  bactocin_covid_tot_0 %>% 
+  drop_na() %>% 
+  mutate(vital_des = as.factor(vital_des)) %>% 
+  group_by(Cluster) %>% 
+  rstatix::wilcox_test(rpkm~vital_des, p.adjust.method = "none") %>% 
+  rstatix::adjust_pvalue(method = "BH")
+
+# Build matrix for heatmap
+bactocin_covid_tot_0_mat <-
+bactocin_covid_tot_0 %>% 
+  group_by(patient_ID, Cluster) %>% 
+  mutate(rpkm_mean = mean(rpkm)) %>% 
+  dplyr::slice_max(rpkm_mean, n = 1, with_ties = F) %>% 
+  ungroup() %>%
+  right_join(bactocin_covid_tot_0_stats) %>% 
+  right_join(card_tot_0_family_mat %>% 
+              rownames_to_column(var = "patient_ID") %>% 
+              left_join(covid_lookup3) %>% 
+              distinct(patient_ID, vital_status), by="patient_ID") %>% 
+  mutate(rpkm_mean = case_when(rpkm_mean == 0 ~ "0",
+                          between(rpkm_mean,  0, 10) ~ "0 - 10",
+                          between(rpkm_mean, 10, 50) ~ "10 - 50",
+                          between(rpkm_mean, 50, 100) ~ "50 - 100",
+                          TRUE ~ "100+"
+         )) %>%  
+  pivot_wider(c(patient_ID), names_from = "Cluster", values_from = "rpkm_mean") %>% 
+  mutate_if(is.character, ~replace(., is.na(.), "0")) %>% 
+   select(where(~ any(. != 0))) %>% 
+  pivot_longer(-patient_ID, names_to = "Cluster", values_to = "rpkm_mean") %>% 
+  filter(Cluster != "NA") %>% 
+  group_by(patient_ID) %>% 
+  mutate(rpkm_mean2 = ifelse(n_distinct(rpkm_mean) == 1, "ND", rpkm_mean)) %>% 
+  ungroup() %>% 
+  mutate(rpkm_mean = ifelse(rpkm_mean2 == "ND", "ND", rpkm_mean)) %>% 
+  right_join(bactocin_covid_tot_0_stats) %>% 
+  pivot_wider(c(patient_ID), names_from = "Cluster", values_from = "rpkm_mean") %>% 
+  arrange(patient_ID) %>% 
+  column_to_rownames(var = "patient_ID")
+  
+
+# Create vital labels (Alive vs Deceased)
+bactocin_heatmap_labels <- 
+  bactocin_covid_tot_0_mat %>% 
+  rownames_to_column(var = "patient_ID") %>% 
+  left_join(covid_lookup %>% select(patient_ID, vital_des)) %>% 
+  select(vital_des) %>% 
+  mutate(vital_des = factor(vital_des, levels = c("Deceased","Alive")))
+
+# Create row annotation of bacteriocin classes
+bactocin_heatmap_signif <- 
+  bactocin_covid_tot_0_mat %>% 
+  t() %>% 
+  as.data.frame() %>% 
+  rownames_to_column(var = "Cluster") %>% 
+  left_join(bactocin_covid_tot_0_stats) %>% 
+  select(Cluster, p, p.adj) %>% 
+  column_to_rownames(var = "Cluster")
+
+# Create heatmap for unadjusted p-values
+bactocin_unadj <-
+bactocin_heatmap_signif %>%
+  select(`Unadjusted p-value` = p) %>% 
+  as.matrix() %>% 
+Heatmap(name = "Significance",
+        cluster_rows = FALSE,
+        cluster_columns = FALSE,
+        col = pvalue_col_fun,
+        column_title = "Unadjusted p-value",
+        column_title_rot = 0,
+        show_column_names = FALSE,
+        column_names_side = "top",
+        rect_gp = gpar(col = "black", lwd = 0.2),
+        row_gap = unit(3.5, "mm"),
+        row_names_gp = gpar(fontsize = 8),
+        row_title_gp = gpar(fontsize = 8, fontface = "bold"),
+        row_title_side = "right",
+        show_row_names = FALSE,
+        row_title_rot = 0,
+        width = unit(0.15, "in")
+)
+
+# Create heatmap for adjusted p-values
+bactocin_adj <-
+bactocin_heatmap_signif %>% 
+  select(`Adjusted p-value` = p.adj) %>% 
+  as.matrix() %>% 
+Heatmap(name = "Significance2",
+        cluster_rows = FALSE,
+        cluster_columns = FALSE,
+        col = pvalue_col_fun,        
+        column_title = "Adjusted p-value",
+        column_title_rot = 0,
+        show_column_names = FALSE,
+        column_names_side = "top",
+        rect_gp = gpar(col = "black", lwd = 0.2),
+        row_gap = unit(3.5, "mm"),
+        row_names_gp = gpar(fontsize = 8),
+        row_title_gp = gpar(fontsize = 8, fontface = "bold"),
+        row_title_side = "right",
+        show_row_names = FALSE,
+        row_title_rot = 0,
+        width = unit(0.15, "in")
+        )
+
+
+# Plot bacteriocin heatmap
+gg_bactocin_heatmap <-
+bactocin_covid_tot_0_mat %>% 
+  t() %>% 
+  Heatmap(
+    name = "RPKM",
+    col = c("ND" = "gray80",
+            "0" = "#f0f4f5",
+            "0 - 10" = "#edb4de", 
+            "10 - 50" = "#db8cc6",
+            "50 - 100" = "#c96bb0",
+            "100+" = "#9c3380"),   
+    rect_gp = gpar(col = "black", lwd = 0.2),
+    column_names_gp = grid::gpar(fontsize = 4),
+    column_gap = unit(6, "mm"),
+    column_split = bactocin_heatmap_labels,
+    column_title_gp = gpar(fontsize = 14),
+    column_title_rot = 0,
+    cluster_columns = FALSE,
+    show_column_names = FALSE,
+    show_column_dend = FALSE,
+    row_names_gp = gpar(fontsize = 8),
+    row_title_gp = gpar(fontsize = 8, fontface = "bold"),
+    row_title_side = "right",
+    row_gap = unit(3.5, "mm"),
+    row_names_side = c("left"),
+    row_title_rot = 0,
+    cluster_rows = FALSE,
+    show_row_dend = FALSE,
+    # row_dend_width = unit(4, "in"),
+    heatmap_width =  unit(12, "in")
+  )
+gg_bactocin_heatmap
+
+gg_bactocin_heatmap_tot <- gg_bactocin_heatmap + bactocin_unadj + bactocin_adj
+gg_bactocin_heatmap_tot
+
+pdf("./Results/bacteriocin_heatmap_total.pdf", height = 6, width = 16, onefile = F)
+gg_bactocin_heatmap_tot
+dev.off()
+```
+
+### Figure 2D: BAI Operon Analysis
+```{r, operon, fig.dim=c(10,12), message = FALSE, warning = FALSE}
+#### Operon START ####
+bai2 <- bai %>% 
+  dplyr::rename(gene = desc) %>% 
+  mutate(gene = ModelName)
+
+dat2 <- dat %>% 
+  dplyr::rename(gene = desc) %>% 
+  mutate(gene = ModelName)
+
+operon_tot <- bai2 %>% 
+  bind_rows(lca) %>% 
+  bind_rows(dat2) %>% 
+  mutate(gene = case_when(gene == "Butyryl-CoA:acetate CoA-transferase" ~ "Butyryl CoA:\nacetate CoA transferase",
+                          gene == "putative butyrate:acetyl-CoA coenzyme A-transferase" ~ "putative butyrate:\nacetyl-CoA\ncoenzyme A-transferase",
+                          gene == "Acetate CoA-transferase subunit beta" ~ "Acetate CoA-transferase\nsubunit beta",
+                          gene == "Acetate CoA-transferase subunit alpha" ~ "Acetate CoA-transferase\nsubunit alpha",
+                          gene == "Butyrate--acetoacetate CoA-transferase subunit A" ~ "Butyrate-acetoacetate\nCoA-transferase\nsubunit A",
+                          gene == "Butyrate--acetoacetate CoA-transferase subunit B" ~ "Butyrate-acetoacetate\nCoA-transferase\nsubunit B",
+                          TRUE ~ gene)) %>% 
+filter(gene != "NA",
+       gene %in% c("5aR", "3bHSDH", "Butyrate kinase 2", "HcrB")|str_detect(gene, "^BAI"))
+
+# Stats
+operon_pvals <-
+  operon_tot %>% 
+  right_join(covid_lookup %>% select(patient_ID, vital_des)) %>% 
+  select(patient_ID, mappedReads, gene, rpkm) %>% 
+  group_by(patient_ID, gene) %>% 
+  mutate(rpkm_mean = mean(rpkm)) %>%
+  dplyr::slice_max(rpkm_mean, n = 1, with_ties = F) %>%
+  ungroup() %>%
+  pivot_wider(c(patient_ID, rpkm_mean), names_from = gene, values_from = mappedReads) %>% 
+  mutate_if(is.numeric, ~replace(., is.na(.), 0)) %>% 
+  pivot_longer(-c(patient_ID, rpkm_mean), names_to = "gene", values_to = "mappedReads") %>% 
+  group_by(patient_ID, gene) %>% 
+  slice_max(mappedReads, n = 1, with_ties = F) %>% 
+  ungroup() %>% 
+  right_join(covid_lookup %>% select(patient_ID, vital_des)) %>% 
+  drop_na(vital_des) %>% 
+  filter(gene != "NA") %>%
+  group_by(gene) %>% 
+  rstatix::wilcox_test(rpkm_mean~vital_des, p.adjust.method = "none") %>% 
+  rstatix::adjust_pvalue(method = "BH") %>% 
+  select(gene, group1, group2, statistic, p.adj) %>% 
+  pivot_longer(!c(gene,group1, group2), names_to = "variable", values_to = "value") %>% 
+  pivot_longer(!c(gene, variable, value), names_to = "vital_des", values_to = "value2") %>% 
+  select(-vital_des) %>% 
+  dplyr::rename(vital_des = value2) %>%  
+  group_by(gene, value) %>% 
+  dplyr::slice(1) %>% 
+  ungroup() %>% 
+  left_join(operon_tot %>% 
+              right_join(covid_lookup %>% select(patient_ID, vital_des)) %>% 
+              select(patient_ID, mappedReads, gene, rpkm) %>% 
+              group_by(patient_ID, gene) %>% 
+              mutate(rpkm_mean = mean(rpkm)) %>%
+              dplyr::slice_max(rpkm_mean, n = 1, with_ties = F) %>%
+              ungroup() %>%
+              pivot_wider(c(patient_ID, rpkm_mean), names_from = gene, values_from = mappedReads) %>% 
+              mutate_if(is.numeric, ~replace(., is.na(.), 0)) %>% 
+              pivot_longer(-c(patient_ID, rpkm_mean), names_to = "gene", values_to = "mappedReads") %>% 
+              group_by(patient_ID, gene) %>% 
+              slice_max(mappedReads, n = 1, with_ties = F) %>% 
+              ungroup() %>%
+              filter(gene != "NA") %>% 
+              distinct(.keep_all = T) %>% 
+              select(gene, rpkm_mean),
+            by = "gene") %>% 
+    mutate(gene = factor(gene, levels = c("BAIB", "BAICD", "BAIE", "BAIF", "BAIG", "BAIH", "BAII", "BAIA1", "BAIA2",
+                                          "3bHSDH", "5aR",
+                                          "Butyrate kinase 2", "HcrB"))) %>% 
+  mutate(vital_des = "Deceased") %>% 
+  distinct(.keep_all = T) %>% 
+  pivot_wider(c(gene, vital_des, rpkm_mean), names_from = "variable", values_from = "value") 
+
+# Heatmap
+operon_tot_0 <-
+operon_tot %>%
+  right_join(covid_lookup %>% select(patient_ID, vital_des)) %>% 
+  select(patient_ID, mappedReads, gene, rpkm) %>% 
+  group_by(patient_ID, gene) %>% 
+  mutate(rpkm_mean = mean(rpkm)) %>%
+  dplyr::slice_max(rpkm_mean, n = 1, with_ties = F) %>%
+  ungroup() %>%
+  pivot_wider(c(patient_ID, rpkm_mean), names_from = gene, values_from = mappedReads) %>% 
+  mutate_if(is.numeric, ~replace(., is.na(.), 0)) %>% 
+  select(where(~ any(. != 0))) %>% 
+  pivot_longer(-c(patient_ID, rpkm_mean), names_to = "gene", values_to = "rpkm") %>% 
+  group_by(patient_ID, gene) %>% 
+  slice_max(rpkm, n = 1, with_ties = F) %>% 
+  ungroup() %>% 
+  right_join(covid_lookup %>% select(patient_ID, vital_des)) %>% 
+  drop_na(vital_des)
+
+
+# Perform stats to find any significant differences
+operon_tot_0_stats <-
+  operon_tot_0 %>% 
+  drop_na() %>% 
+  mutate(vital_des = as.factor(vital_des)) %>% 
+  group_by(gene) %>% 
+  rstatix::wilcox_test(rpkm~vital_des, p.adjust.method = "none") %>% 
+  rstatix::adjust_pvalue(method = "BH")
+
+operon_tot_0_mat <-
+operon_tot_0 %>% 
+  group_by(patient_ID, gene) %>% 
+  mutate(rpkm_mean = mean(rpkm)) %>% 
+  dplyr::slice_max(rpkm_mean, n = 1, with_ties = F) %>% 
+  ungroup() %>%
+  right_join(operon_tot_0_stats) %>% 
+  mutate(rpkm_mean = case_when(rpkm_mean == 0 ~ "0",
+                          between(rpkm_mean,  0, 10) ~ "0 - 10",
+                          between(rpkm_mean, 10, 50) ~ "10 - 50",
+                          between(rpkm_mean, 50, 100) ~ "50 - 100",
+                          TRUE ~ "100+"
+         )) %>%
+  pivot_wider(c(patient_ID), names_from = "gene", values_from = "rpkm_mean") %>% 
+  drop_na(patient_ID) %>% 
+  mutate_if(is.numeric, ~replace(., is.na(.), 0)) %>% 
+  select(where(~ any(. != 0))) %>% 
+  column_to_rownames(var = "patient_ID")
+
+
+pvalue_col_fun = colorRamp2(c(0, 0.05), c("forestgreen", "grey90")) 
+
+# Create row annotation of operon genes
+operon_heatmap_signif <- 
+  operon_tot_0_mat %>% 
+  t() %>% 
+  as.data.frame() %>% 
+  rownames_to_column(var = "gene") %>% 
+  left_join(operon_tot_0_stats) %>% 
+  select(gene, p, p.adj) %>% 
+  column_to_rownames(var = "gene")
+
+
+# Create heatmap for unadjusted p-values
+operon_unadj <-
+operon_heatmap_signif %>%
+  select(`Unadjusted p-value` = p) %>% 
+  as.matrix() %>% 
+Heatmap(name = "Significance",
+        cluster_rows = FALSE,
+        cluster_columns = FALSE,
+        col = pvalue_col_fun,        
+        column_title = "Unadjusted p-value",
+        column_title_rot = 0,
+        show_column_names = FALSE,
+        column_names_side = "top",
+        rect_gp = gpar(col = "black", lwd = 0.2),
+        row_gap = unit(3.5, "mm"),
+        row_names_gp = gpar(fontsize = 8),
+        row_title_gp = gpar(fontsize = 8, fontface = "bold"),
+        row_title_side = "right",
+        show_row_names = FALSE,
+        row_title_rot = 0,
+        width = unit(0.15, "in")
+)
+
+# Create heatmap for adjusted p-values
+operon_adj <-
+operon_heatmap_signif %>% 
+  select(`Adjusted p-value` = p.adj) %>% 
+  as.matrix() %>% 
+Heatmap(name = "Significance",
+        cluster_rows = FALSE,
+        cluster_columns = FALSE,
+        col = pvalue_col_fun,        
+        column_title = "Adjusted p-value",
+        column_title_rot = 0,
+        show_column_names = FALSE,
+        column_names_side = "top",
+        rect_gp = gpar(col = "black", lwd = 0.2),
+        row_gap = unit(3.5, "mm"),
+        row_names_gp = gpar(fontsize = 8),
+        row_title_gp = gpar(fontsize = 8, fontface = "bold"),
+        row_title_side = "right",
+        show_row_names = FALSE,
+        row_title_rot = 0,
+        width = unit(0.15, "in")
+        )
+
+
+# Create vital labels (Alive vs Deceased)
+operon_heatmap_labels <- 
+  operon_tot_0_mat %>% 
+  rownames_to_column(var = "patient_ID") %>% 
+  left_join(covid_lookup %>% select(patient_ID, vital_des)) %>% 
+  select(vital_des) %>% 
+  mutate(vital_des = factor(vital_des, levels = c("Deceased","Alive")))
+
+
+gg_operon_heatmap <-
+operon_tot_0_mat %>% 
+  t() %>%
+  Heatmap(
+    name = "RPKM",
+    col = c("0" = "#f0f4f5",
+        "0 - 10" = "#edb4de", 
+        "10 - 50" = "#db8cc6",
+        "50 - 100" = "#c96bb0",
+        "100+" = "#9c3380"),
+    rect_gp = gpar(col = "black", lwd = 0.2),
+    column_names_gp = grid::gpar(fontsize = 8),
+    column_gap = unit(6, "mm"),
+    column_split = operon_heatmap_labels,
+    column_title_gp = gpar(fontsize = 14),
+    column_title_rot = 0,
+    cluster_columns = FALSE,
+    show_column_names = FALSE,
+    show_column_dend = FALSE,
+    row_names_gp = gpar(fontsize = 8),
+    row_title_gp = gpar(fontsize = 8, fontface = "bold"),
+    row_title_side = "right",
+    row_gap = unit(3.5, "mm"),
+    row_names_side = c("left"),
+    row_title_rot = 0,
+    cluster_rows = FALSE,
+    show_row_dend = FALSE,
+    heatmap_width =  unit(12, "in")
+  )
+gg_operon_heatmap
+
+gg_operon_heatmap_tot <- gg_operon_heatmap + operon_unadj + operon_adj
+gg_operon_heatmap_tot
+
+
+pdf("./Results/operon.pdf", height = 4, width = 6, onefile = F)
+draw(gg_operon_heatmap_tot, auto_adjust = F)
+dev.off()
+#### Operon END ####
+```
+
+### Figure 2 Compilation: Join CARD, Toxins, Bacteriocin Heatmaps and Genes (Operon etc.)
+```{r, figure-2, card, toxins, bacteriocins heatmap, fig.dim=c(12,14), message=FALSE, warning=FALSE}
+ht_list <- gg_card_family_heatmap %v% gg_bactocin_heatmap %v% gg_toxin_heatmap %v% gg_operon_heatmap
+unadj_list <- card_unadj %v% bactocin_unadj %v% toxins_unadj %v% operon_unadj
+adj_list <- card_adj %v% bactocin_adj %v% toxins_adj %v% operon_adj
+
+pdf("./Results/bacteriocins_toxins_card_heatmap.pdf", height = 10, width = 14)
+draw(ht_list, ht_gap = unit(1, "cm"))
+dev.off()
+
+pdf("./Results/unadjusted_heatmap.pdf", height = 10, width = 14)
+draw(unadj_list, ht_gap = unit(1, "cm"))
+dev.off()
+
+pdf("./Results/adjusted_heatmap.pdf",  height = 10, width = 14)
+draw(adj_list, ht_gap = unit(1, "cm"))
+dev.off()
+```
+
+### Figure 3A: Volcano Plot
+```{r, volcano-plot, fig.dim=c(10,8), message=FALSE, warning=FALSE}
+qual_log2fc <- metab_qual_raw %>%
+  drop_na() %>%
+  mutate(vital_status = as.factor(vital_status)) %>% 
+  arrange(vital_status, patient_ID) %>% 
+  group_by(compound) %>%
+  mutate(count_vital_status_0 = length(mvalue[vital_status == "0"]),
+         count_vital_status_1 = length(mvalue[vital_status == "1"])) %>%
+  filter(count_vital_status_0 >= 2 & count_vital_status_1 >= 2) %>%
+  summarise(log2fc_val = log((mean(mvalue[vital_status == "0"], na.rm = T)/ mean(mvalue[vital_status == "1"], na.rm = T)), base = 2)) # 0 = Alive, 1 = Deceased
+
+qual_pval <- metab_qual_raw %>% 
+  drop_na() %>%
+  mutate(vital_status = as.factor(vital_status)) %>% 
+  arrange(vital_status, patient_ID) %>% 
+  group_by(compound) %>%
+  mutate(count_vital_status_0 = length(mvalue[vital_status == "0"]),
+         count_vital_status_1 = length(mvalue[vital_status == "1"])) %>%
+  filter(count_vital_status_0 >= 2 & count_vital_status_1 >= 2) %>%
+  rstatix::wilcox_test(mvalue ~ vital_status) %>% 
+  rstatix::adjust_pvalue(method = "BH") %>%
+  add_significance("p.adj")
+
+qual_tot <- left_join(qual_log2fc, qual_pval) %>% 
+  column_to_rownames(var = "compound")
+
+# Volcano Plot
+set.seed(123456)
+volcano <-
+EnhancedVolcano(qual_tot,
+                lab = rownames(qual_tot),
+                x = 'log2fc_val',
+                y = 'p',
+                title = NULL,
+                pCutoff = 0.05,
+                FCcutoff = 1,
+                pointSize = 4,
+                labSize = 5.25,
+                labCol = "black",
+                caption = NULL,
+                colAlpha = 0.65,
+                col = c("gray75", paletteer::paletteer_d("palettetown::teamrocket")[3:5]),
+                xlim = c(-5.5, 5.5),
+                ylim = c(0, 4),
+                legendPosition = "right",
+                legendLabels = c(expression(p > 0.05*";" ~ Log[2] ~ FC < "\u00B1"*1), 
+                          expression(p > 0.05*";" ~ Log[2] ~ FC >= "\u00B1"*1), 
+                          expression(p <= 0.05*";" ~ Log[2] ~ FC < "\u00B1"*1), 
+                          expression(p <= 0.05*";" ~ Log[2] ~ FC >= "\u00B1"*1)),
+                legendLabSize = 14,
+                drawConnectors = T,
+                widthConnectors = 0,
+                arrowheads = F,
+                gridlines.minor = F,
+                gridlines.major = F
+                ) +
+  theme(
+    axis.text = et(color = "black"),
+    legend.text = et(hjust = 0),
+    plot.margin = unit(c(0, 4, 2, 4), "cm")
+  ) +
+  labs(subtitle = NULL) +
+  annotate("segment", x = 1.05, xend = 3.5, y = 4, yend = 4, 
+           arrow = arrow(), size = 2, color = ggsci::pal_igv("default")(2)[1]) +
+  annotate("text", x = 4.15, y = 4, label = "Alive", size = 6, color = ggsci::pal_igv("default")(2)[1]) +
+  annotate("rect", xmin = 1, xmax = Inf, ymin = -log(0.05, base = 10), ymax = Inf,
+           alpha = .1, fill = ggsci::pal_igv("default")(2)[1]) +
+  annotate("segment", x = -1.05, xend = -3.5, y = 4, yend = 4, 
+           arrow = arrow(), size = 2, color = ggsci::pal_igv("default")(2)[2]) +
+  annotate("text", x = -4.5, y = 4, label = "Deceased", size = 6, color = ggsci::pal_igv("default")(2)[2]) +
+  annotate("rect", xmin = -1, xmax = -Inf, ymin = -log(0.05, base = 10), ymax = Inf,
+           alpha = .1, fill = ggsci::pal_igv("default")(2)[2]) +
+  guides(color = guide_legend(nrow = 4),
+         shape = guide_legend(nrow = 4))
+
+volcano
+
+ggsave(plot = volcano, "./Results/volcano_plot_total.pdf", width = 12, height = 8, units = "in")
+```
+
+### Figure 3B: Quant Metabolomics
+```{r, quant-metabolomics, fig.dim=c(10,8), message=FALSE, warning=FALSE}
+#### Metabolites START ####
+# Convert ug/mL for down-selected bile acids
+deoxycholic_mw <- 392.2927
+isodeoxycholic_mw <- 392.2927
+lithocholic_mw <- 376.2977
+
+kw_metab_pvals <-
+metab_quant %>% 
+  mutate(mvalue = case_when(compound == "deoxycholic acid" ~ (mvalue / deoxycholic_mw)*1000,
+                                      compound == "isodeoxycholic acid" ~ (mvalue / isodeoxycholic_mw)*1000,
+                                      compound == "lithocholic acid" ~ (mvalue / lithocholic_mw)*1000,
+                                      TRUE ~ mvalue),
+    compound = case_when(compound == "isodeoxycholic acid" ~ "Isodeoxycholic Acid", 
+                         compound == "lithocholic acid" ~ "Lithocholic Acid",
+                         compound == "deoxycholic acid" ~ "Deoxycholic Acid",
+                         compound == "desaminotyrosine" ~ "Desaminotyrosine",
+                         compound == "indole-3-carboxaldehyde" ~ "Indole-3-Carboxaldehyde"
+                              )) %>% 
+  filter(compound %in% c("Deoxycholic Acid", "Lithocholic Acid", 
+                         "Isodeoxycholic Acid",
+                         "Desaminotyrosine", 
+                         "Indole-3-Carboxaldehyde"
+                         )) %>% 
+  group_by(compound) %>% 
+  rstatix::wilcox_test(mvalue~vital_status, p.adjust.method = "none", paired = F) %>% 
+  ungroup() %>% 
+  rstatix::adjust_pvalue(method = "BH") %>% 
+  mutate(p.adj = round(p.adj, 3)) %>% 
+  select(compound, group1, group2, statistic, p, p.adj) %>% 
+  pivot_longer(!c(compound,group1, group2), names_to = "variable", values_to = "value") %>% 
+  pivot_longer(!c(compound, variable, value), names_to = "vital_status", values_to = "value2") %>% 
+  select(-vital_status) %>% 
+  dplyr::rename(vital_status = value2) %>%  
+  group_by(compound, variable) %>%  
+  dplyr::slice(1) %>% 
+  ungroup() %>% 
+  left_join(metab_quant %>% 
+  mutate(compound = case_when(compound == "isodeoxycholic acid" ~ "Isodeoxycholic Acid", 
+                              compound == "lithocholic acid" ~ "Lithocholic Acid",
+                              compound == "deoxycholic acid" ~ "Deoxycholic Acid",
+                              compound == "desaminotyrosine" ~ "Desaminotyrosine",
+                              compound == "indole-3-carboxaldehyde" ~ "Indole-3-Carboxaldehyde"
+                              )) %>% 
+  filter(compound %in% c("Deoxycholic Acid", "Lithocholic Acid", 
+                         "Isodeoxycholic Acid",
+                         "Desaminotyrosine", 
+                         "Indole-3-Carboxaldehyde"
+                         )) %>% 
+              group_by(compound) %>% 
+              summarize(mvalue = quantile(mvalue, probs = 0.75)) %>% 
+              ungroup() %>% 
+              distinct(.keep_all = T) %>% 
+              select(compound, mvalue),
+            by = "compound") %>% 
+  mutate(vital_status = "Deceased") %>% 
+  distinct(.keep_all = T) %>% 
+  pivot_wider(c(compound, vital_status, mvalue), names_from = "variable", values_from = "value")
+  
+
+quant_vital_bile <-
+metab_quant %>% 
+  mutate(mvalue = case_when(compound == "deoxycholic acid" ~ (mvalue / deoxycholic_mw)*1000,
+                                      compound == "isodeoxycholic acid" ~ (mvalue / isodeoxycholic_mw)*1000,
+                                      compound == "lithocholic acid" ~ (mvalue / lithocholic_mw)*1000,
+                                      TRUE ~ mvalue),
+         compound = case_when(compound == "isodeoxycholic acid" ~ "Isodeoxycholic Acid", 
+                              compound == "lithocholic acid" ~ "Lithocholic Acid",
+                              compound == "deoxycholic acid" ~ "Deoxycholic Acid"
+                              )) %>% 
+  filter(compound %in% c("Deoxycholic Acid", "Lithocholic Acid", 
+                         "Isodeoxycholic Acid"
+                         )) %>% 
+  ungroup() %>% 
+  mutate(vital_status = ifelse(vital_status == "0", "Alive", "Deceased")) %>% 
+  ggplot(aes(x = vital_status, y = mvalue, fill = vital_status)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(size = 1.6, width = 0.3, shape = 21, fill = "black", alpha = 0.8)+
+  geom_label(inherit.aes = F, aes(y = mvalue*5, x = 1.5, label = paste0("Wilcoxon,\n W = ", statistic, ",\n", "p.adj = ", p.adj)), 
+             data = kw_metab_pvals %>% filter(compound %in% c("Deoxycholic Acid", "Lithocholic Acid", 
+                                                              "Isodeoxycholic Acid")), 
+             size = 3.25,
+             alpha = 0.9) +
+  theme_bw() +
+  theme(panel.grid = eb(),
+        axis.text = et(size = 12, color = "black"),
+        axis.title = et(size = 14, color = "black"),
+        strip.text.x = et(size = 12, color = "black", angle = 0),
+        legend.title = et(color = "black", size = 14),
+        legend.text = et(color = "black", size = 12)) +
+  ggsci::scale_fill_igv()+
+  facet_wrap(factor(compound, levels = c("Deoxycholic Acid", "Lithocholic Acid", "Isodeoxycholic Acid"
+                         ))~., 
+             scales = "free_y",
+             nrow = 1
+             ) + 
+  ylab("Concentration (µM)\n") +
+  xlab("") +
+  labs(fill = "Vital Status") 
+
+quant_vital_indole1 <-
+metab_quant %>% 
+  mutate(compound = case_when(compound == "desaminotyrosine" ~ "Desaminotyrosine"
+                              )) %>% 
+  filter(compound %in% c("Desaminotyrosine"
+                         )) %>% 
+  ungroup() %>% 
+  mutate(vital_status = ifelse(vital_status == "0", "Alive", "Deceased")) %>% 
+  ggplot(aes(x = vital_status, y = mvalue, fill = vital_status)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(size = 1.6, width = 0.3, shape = 21, fill = "black", alpha = 0.8)+
+  geom_label(inherit.aes = F, aes(y = mvalue*5, x = 1.5, label = paste0("Wilcoxon,\n W = ", statistic, ",\n", "p.adj = ", p.adj)), 
+             data = kw_metab_pvals %>% filter(compound %in% c("Desaminotyrosine")), 
+             size = 3.25,
+             alpha = 0.9) +
+  theme_bw() +
+  theme(panel.grid = eb(),
+        axis.text = et(size = 12, color = "black"),
+        axis.title = et(size = 14, color = "black"),
+        strip.text.x = et(size = 12, color = "black", angle = 0),
+        legend.title = et(color = "black", size = 14),
+        legend.text = et(color = "black", size = 12)) +
+  ggsci::scale_fill_igv()+
+  facet_wrap(factor(compound, levels = c("Desaminotyrosine"))~., 
+             scales = "free_y",
+             ncol = 1
+             ) + 
+  ylab("Concentration (µM) \n") +
+  xlab("") +
+  labs(fill = "Vital Status") +
+  ylim(c(0, 300))
+
+quant_vital_indole2 <-
+metab_quant %>% 
+  mutate(compound = case_when(compound == "indole-3-carboxaldehyde" ~ "Indole-3-Carboxaldehyde")) %>% 
+  filter(compound %in% c("Indole-3-Carboxaldehyde")) %>% 
+  ungroup() %>% 
+  mutate(vital_status = ifelse(vital_status == "0", "Alive", "Deceased")) %>% 
+  ggplot(aes(x = vital_status, y = mvalue, fill = vital_status)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(size = 1.6, width = 0.3, shape = 21, fill = "black", alpha = 0.8)+
+  geom_label(inherit.aes = F, aes(y = mvalue*1.2, x = 1.5, label = paste0("Wilcoxon,\n W = ", statistic, ",\n", "p.adj = ", p.adj)), 
+             data = kw_metab_pvals %>% filter(compound %in% c("Indole-3-Carboxaldehyde")), 
+             size = 3.25,
+             alpha = 0.9) +
+  theme_bw() +
+  theme(panel.grid = eb(),
+        axis.text = et(size = 12, color = "black"),
+        axis.title = et(size = 14, color = "black"),
+        strip.text.x = et(size = 12, color = "black", angle = 0),
+        legend.title = et(color = "black", size = 14),
+        legend.text = et(color = "black", size = 12)) +
+  ggsci::scale_fill_igv()+
+  facet_wrap(factor(compound, levels = c("Indole-3-Carboxaldehyde"))~., 
+             scales = "free_y",
+             ncol = 1
+             ) + 
+  ylab("") +
+  xlab("") +
+  labs(fill = "Vital Status")
+
+quant_vital_indole_tot <- cowplot::plot_grid(quant_vital_indole1 + theme(legend.position = "none",
+                                                                         axis.title.x = eb(),
+                                                                         axis.title.y = eb(),
+                                                                         plot.margin = unit(c(0, 0, 0, 0), "cm")),
+                                             quant_vital_indole2 + theme(legend.position = "right",
+                                                                         plot.margin = unit(c(0, 0, 0, 0), "cm"),
+                                                                         axis.title.x = eb()),
+                                             rel_widths = c(1, 1.5))
+quant_vital_indole_tot
+
+
+
+quant_vital_tot <- cowplot::plot_grid(quant_vital_bile + theme(legend.position = "none",
+                                                               plot.margin = unit(c(0, 0, 0, 0), "cm"),
+                                                               axis.title.x = eb()
+                                                               ),
+                                      NULL,
+                                      quant_vital_indole_tot + theme(
+                                                               axis.title.x = eb(),
+                                                               plot.margin = unit(c(0, 0, 0, 0), "cm")
+                                                               ),
+                                      rel_widths = c(1.15, -0.01, 1),
+                                      nrow = 1,
+                                      align = "hv", 
+                                      axis = "l")
+
+quant_vital_tot
+
+pdf("./Results/covid_quant_metab_vital.pdf", height =4, width = 12)
+quant_vital_tot
+dev.off()
+#### Metabolites END ####
+```
+
+### Figure 3 Compilation: Join Volcano Plot and Significant Quant Metabolites
+```{r, join-volcano-quant-plots, fig.dim=c(14,16), message=FALSE, warning=FALSE}
+pdf("./Results/Figure_3.pdf", height = 14, width = 16)
+cowplot::plot_grid(volcano, quant_vital_tot, 
+                   nrow = 2,
+                   rel_heights = c(0.9, 1.1),
+                   align = "h",
+                   axis = "l",
+                  labels = c('A', 'B'),
+                  label_size = 26)
+dev.off()
+```
+
+### Table 1
+```{r, table-1, warning=FALSE, message=FALSE}
+# Create table 2
+tab1_1 <- CreateTableOne(vars = tableone_vars,
+                         testNonNormal = "wilcox.test",
+                         argsNonNormal = list(paired = FALSE,
+                                              correct = TRUE,
+                                              method = "BH"),
+                         includeNA = FALSE,
+                         factorVars = tableone_cats,
+                         strata = "vital_status", 
+                         data = covid_lookup %>% 
+                           left_join(metab_quant %>% 
+                                       pivot_wider(c(patient_ID, vital_status), names_from = "compound", values_from = "mvalue")))
+
+tab1_2 <- print(tab1_1, nonnormal = TRUE, formatOptions = list(big.mark = ","))
+
+# kableExtra::kable(tab1_2) %>%
+#   kableExtra::kable_classic() %>%
+#   kableExtra::save_kable(file = "table_1_image.png", zoom = 5)
+
+
+write.csv(tab1_2, "./Results/Table_1.csv", row.names = TRUE)
+
+# Need to adjust pvalues
+tab1_2_padjust <- read.csv("./Results/Table_1.csv")
+
+tab1_2_padjust <- tab1_2_padjust %>% 
+  mutate(test = ifelse(!is.na(p) & test == "", "x2", test)) %>% 
+  group_by(test) %>% 
+  rstatix::adjust_pvalue(p.col = "p", method = "BH")
+
+# Read in csv to then append adjusted pvalues
+write.csv(tab1_2_padjust, "./Results/Table_1_padjust.csv", row.names = TRUE)
+```
+
+### Table 2
+```{r, table-2, warning=FALSE, message=FALSE} 
+# table2 variables
+tabletwo_vars <- c("InvSimpson", "lithocholic acid", "deoxycholic acid", "isodeoxycholic acid", "cholic acid",
+                   "glycocholic acid", "3-oxolithocholic acid", "alloisolithocholic acid", "taurocholic acid",
+                   "butyrate", "propionate", "acetate", "succinate", "desaminotyrosine", "proteo_doms", "entero_doms")
+
+# Create table 2
+tab2_1 <- CreateTableOne(vars = tabletwo_vars,
+                         testNonNormal = "wilcox.test",
+                         argsNonNormal = list(paired = FALSE,
+                                              correct = TRUE, 
+                                              method = "BH"),
+                         includeNA = FALSE,
+                         factorVars = tableone_cats,
+                         strata = "vital_status", 
+                         data = covid_lookup %>% 
+                           left_join(metab_quant %>% 
+                                       pivot_wider(c(patient_ID, vital_status), names_from = "compound", values_from = "mvalue")))
+
+
+tab2_2 <- print(tab2_1, nonnormal = TRUE, formatOptions = list(big.mark = ","))
+
+# kableExtra::kable(tab2_2) %>%
+#   kableExtra::kable_classic() %>%
+#   kableExtra::save_kable(file = "table_2_image.png", zoom = 5)
+
+write.csv(tab2_2, "./Results/Table_2.csv", row.names = TRUE)
+
+# Need to adjust pvalues
+tab2_2_padjust <- read.csv("./Results/Table_2.csv")
+
+tab2_2_padjust <- tab2_2_padjust %>% 
+  mutate(test = ifelse(!is.na(p) & test == "", "x2", test)) %>% 
+  group_by(test) %>% 
+  rstatix::adjust_pvalue(p.col = "p", method = "BH")
+  
+
+# Read in csv to then append adjusted pvalues
+write.csv(tab2_2_padjust, "./Results/Table_2_padjust.csv", row.names = TRUE)
+```
+
+### Table 3
+```{r, table-3, warning=FALSE,message=FALSE}
+cutpoints_unnest %>% 
+  filter(subgroup %in% c("deoxycholic acid", "isodeoxycholic acid", "lithocholic acid", "desaminotyrosine")) %>% 
+  select(compound = subgroup, optimal_cutpoint) %>% 
+  mutate(optimal_cutpoint = case_when(compound == "deoxycholic acid" ~ (optimal_cutpoint / deoxycholic_mw)*1000,
+                                      compound == "isodeoxycholic acid" ~ (optimal_cutpoint / isodeoxycholic_mw)*1000,
+                                      compound == "lithocholic acid" ~ (optimal_cutpoint / lithocholic_mw)*1000,
+                                      TRUE ~ optimal_cutpoint),
+         optimal_cutpoint = round(optimal_cutpoint, 2),
+         compound = str_to_title(compound),
+         `0` = paste(">=", optimal_cutpoint, "µM"),
+         `1` = paste("<", optimal_cutpoint, "µM")) %>% 
+  select(compound, `0`,`1`) %>% 
+  mutate(compound = as.factor(compound),
+         compound = factor(compound, levels = c("Deoxycholic Acid", "Isodeoxycholic Acid", "Lithocholic Acid",  "Desaminotyrosine"))) %>% 
+  arrange(compound) %>% 
+write.csv(., "./Results/Table_3.csv", row.names = F)
+```
+
+### Table 4
+```{r, cox-proportional-hazards, message=FALSE, warning=FALSE}
+# Variables labels 
+covid_lookup3 <- covid_lookup2 %>% 
+  dplyr::rename(Age = age,
+                `SOFA Score` = sofa,
+                `Steroid Treatment` = steroid,
+                `Charlson Comorbidity Index` = Charlson,
+                `Admission Location` = Admission,
+                `Proteobacteria Domination` = proteo_doms,
+                `Glascow Coma Scale` = gcsmin,
+                `Microbiome Metabolic Profile` = mmp_score,
+                `Chronic Kidney Disease` = CKD,
+                `Vancomycin Adminstration` = Vancomycin,
+                `Neutrophil Percent` = Neutrophil,
+                `Bsophil Percent` = Basophil,
+                `Eosinophil Percent` = Eosinophil
+                ) %>% 
+  mutate(vital_cox = ifelse(vital_status == 1, 2, 1))
+
+# Cox Model with Univariable inclusion of p<0.3
+coxauc <-
+  coxph(
+    Surv(covid_lookup3$SurvTime, covid_lookup3$vital_cox) ~ Age + 
+      `Chronic Kidney Disease` + 
+      `SOFA Score` + 
+      `Vancomycin Adminstration` + 
+      `Admission Location` +  
+      `Microbiome Metabolic Profile`,
+    data = covid_lookup3
+  ) %>%
+  tbl_regression(exp = TRUE)
+
+gtsave(as_gt(coxauc),
+       file = "./Results/Table_4.png")
+```
+
+### Table 5
+```{r, transition-logistic-regression, message=FALSE, warning=FALSE}
+covid_transition2 <- covid_transition %>% 
+  left_join(covid_lookup2 %>% select(patient_ID, Symptom_Days, mmp_score, grouped_mmp_score)) %>% 
+  dplyr::rename(
+    `Age` = age,                 
+    `SOFA Score` = sofa,
+    `Steroid Treatment` = steroid,
+    `Charlson Comorbidity Index` = Charlson,
+    `Admission Location` = Admission,     
+    `Proteobacteria Domination` = proteo_doms,
+    `BMI` = bmi,
+    `Enterococcus Domination` = entero_doms,
+    `Bacteriodetes Relative Abundance` = bacteroides_pctseqs,
+    `Platelets` = plt,
+    `Bilirubin` = biliru,                
+    `Glascow Coma Scale` = gcsmin,
+    `Creatinine` = ap2_creatinine,       
+    `Temp` = ap2_temp_c, 
+    `Mean Arterial Pressure` = ap2_map,
+    `White Blood Cells` = ap2_wbc,         
+    `Hematocrit` = ap2_hematocrit,       
+    `Chronic Kidney Disease` = CKD,                   
+    `Coronary Artery Disease` = CAD,                   
+    `Hyperlipidemia` = HLD,         
+    `Microbiome Metabolic Profile` = mmp_score,
+    `Vasoactive Agents` = vasopresser
+  ) %>% 
+  mutate(t_code = ifelse(Transition == "HFNC Failure", 1, 0))
+  
+  
+log_t5_1 <-
+  glm(
+    t_code ~ `Age` +  `Chronic Kidney Disease` + `Steroid Treatment` + `SOFA Score` + Doxycycline + `Microbiome Metabolic Profile`,
+    data = covid_transition2
+  ) %>%
+  tbl_regression(exp = TRUE)
+
+gtsave(as_gt(log_t5_1),
+       file = "./Results/Table_5.png")
+```
+
+
+ ***
+ 
+## Supplemental Tables
+### Supplemental Table 1
+```{r, supplementary-table-1, message=FALSE, warning=FALSE}
+# Supplementary table one vars
+s1_vars <- c("race", "sex", "age", "bmi", "HTN", "HLD", "DM", "Malignancy", "CKD", "ESRD",
+                    "sofa", "Charlson", "APACHE", "Symptom_Days", "Admission", "steroid", "remd_treat",
+                    "Betalactams", "Levofloxicin", "Vancomycin", "Metronidazole", "Macrolides", "Doxycycline",
+                    "Trimethoprim-Sulfamethoxazole")
+
+# Transition table 
+tab_s1_1 <- CreateTableOne(
+                       vars = s1_vars,
+                       factorVars = tableone_cats,
+                       strata = "Transition", 
+                       data = covid_transition %>% 
+                         filter(Transition %in% c("HFNC Success", "HFNC Failure")) %>% 
+                         left_join(metab_quant %>%
+                                     pivot_wider(c(patient_ID, vital_status), names_from = "compound", values_from = "mvalue")))
+
+tab_s1_2 <- print(tab_s1_1, nonnormal = TRUE, formatOptions = list(big.mark = ","))
+
+write.csv(tab_s1_2, "./Results/Table_S1.csv", row.names = TRUE)
+
+# Need to adjust pvalues
+tab_s1_2_padjust <- read.csv("./Results/Table_S1.csv")
+
+tab_s1_2_padjust <- tab_s1_2_padjust %>% 
+  mutate(test = ifelse(!is.na(p) & test == "", "x2", test)) %>% 
+  group_by(test) %>% 
+  rstatix::adjust_pvalue(p.col = "p", method = "BH")
+
+# Read in csv to then append adjusted pvalues
+write.csv(tab_s1_2_padjust, "./Results/Table_5_padjust.csv", row.names = TRUE)
+```
+ 
+
+## Supplemental Figures
+### Supplemental Figure 2: KEGG Pathways
+```{r, kegg-pathways, fig.dim=c(12,14), message=FALSE, warning=FALSE}
+emapper_2 <- emapper %>%
+  left_join(covid_lookup %>% 
+              select(patient_ID, vital_des)) %>%
+  dplyr::count(patient_ID, vital_des, rank1, rank2, rank3, rank4, name = "keggCnt") %>%
+  add_count(vital_des, wt = keggCnt, name = "totalCnt") %>%
+  mutate(keggPerc = keggCnt / totalCnt)
+
+emapper_stats <-
+emapper_2 %>% 
+  group_by(patient_ID, vital_des, rank2) %>% 
+  summarise(keggPerc_tot = sum(keggPerc)) %>% 
+  ungroup() %>% 
+  group_by(rank2) %>% 
+  rstatix::wilcox_test(keggPerc_tot ~ vital_des) %>% 
+  rstatix::adjust_pvalue(method = "BH") %>% 
+  filter(p.adj <= 0.05) # NO SIGNIFICANT DIFFERENCES
+
+gg_emapper_box <-
+emapper_2 %>% 
+  filter(rank2 != "09194 Poorly characterized") %>%
+  mutate(vital_des = factor(vital_des, levels = c("Alive", "Deceased"))) %>% 
+  group_by(patient_ID, vital_des, rank2) %>% 
+  summarise(keggPerc_tot = sum(keggPerc)) %>% 
+  ggplot(., aes(x = rank2, y = keggPerc_tot, fill = vital_des)) +
+  geom_boxplot(outlier.shape = NA) +
+  theme_bw() +
+  theme(
+        legend.position = "right",
+        strip.background = element_rect(fill = "white"),
+        axis.title = et(color = "black", size = 14),
+        axis.text = et(color = "black", size = 12)
+  ) +
+  ggsci::scale_fill_igv() +
+  scale_y_continuous(label = scales::percent,
+                     expand = expansion(mult = c(0.005,0.005))) +
+  xlab("KEGG Pathways (Rank 2)") +
+  ylab("Percentage of Annotated KEGG Pathways (%)\n") +
+  coord_flip()
+
+ggsave(plot = gg_emapper_box, file = "./Results/Figure_S2.pdf", width = 14, height = 10, units = "in")
+```
+
+### Supplemental Figure 3: Qualitative Metabolomic Heatmap
+```{r, qualitative-heatmap, fig.dim = c(12,12), message=FALSE, warning=FALSE}
+#### Heatmap START ####
+# Build heatmap compound list
+heatmap_cmpds <- 
+  metab_qual_raw %>% 
+  ungroup() %>% 
+  filter(compound %!in% c("tauro-alpha-muricholic acid-or-tauro-beta-muricholic acid","tauro-alpha-or-tauro-beta-muricholic acid",
+                          "ursocholic acid", "7-12-dioxolithocholic acid", "toluate")) %>%
+  mutate(compound = ifelse(compound == "isovaleric-acid", "isovalerate", compound)) %>% 
+  distinct(compound) %>% 
+  drop_na() %>% 
+  mutate(compound = str_to_title(compound))
+
+
+heatmap_data <- 
+  metab_qual_raw %>% 
+  mutate(compound = ifelse(compound == "isovaleric-acid", "isovalerate", compound),
+         compound = str_to_title(compound)) %>% 
+  filter(compound %in% heatmap_cmpds$compound) %>% 
+  group_by(compound) %>% 
+  mutate(median_val = median(mvalue, na.rm = T),
+         heatmap_val = ifelse(log(mvalue/ median_val, base = 2) == -Inf, 0, log(mvalue/ median_val, base = 2))) %>% 
+  ungroup() %>% 
+  select(-c(mvalue, median_val)) %>% 
+  group_by(patient_ID, compound) %>% 
+  slice_max(heatmap_val, with_ties = F, n = 1) %>% 
+  ungroup() %>% 
+  mutate(vital_status = ifelse(vital_status == 1, "Deceased", "Alive"),
+         vital_status = factor(vital_status, levels = c("Deceased","Alive")))
+
+
+heatmap_labels <- 
+  heatmap_data %>% 
+  mutate(compound = str_to_title(compound),
+         class = case_when(grepl(x = compound, pattern = "acid$", ignore.case = T) ~ "Bile Acid",
+                               compound %in% c("Threonine", "Glycine", "Tyrosine", "Tyramine", "Serine", "Leucine", "Isoleucine",
+                                               "Valine", "Phenylalanine", "Alanine", "Proline", "Aspartate", 
+                                               "Methionine", "Glutamate", "Lysine", "Cysteine", "Tryptophan") ~ "Amino Acid",
+                               TRUE ~ "Short-Chain Fatty Acid")) %>% 
+  arrange(class, compound) %>% 
+  pivot_wider(c(vital_status, patient_ID), names_from = compound, values_from = heatmap_val) %>% 
+  group_by(patient_ID) %>% 
+  arrange(patient_ID) %>% 
+  ungroup() %>% 
+  select(vital_status) %>% 
+  mutate(vital_status = factor(vital_status, levels = c("Deceased","Alive")))
+
+
+# Build heatmap compound order (row order) and compound class (row slice)
+heatmap_order <- 
+  metab_qual_raw %>% 
+  ungroup() %>% 
+  filter(compound %!in% c("tauro-alpha-muricholic acid-or-tauro-beta-muricholic acid","tauro-alpha-or-tauro-beta-muricholic acid",
+                          "ursocholic acid", "7-12-dioxolithocholic acid", "toluate")) %>%
+  mutate(compound = ifelse(compound == "isovaleric-acid", "isovalerate", compound)) %>% 
+  distinct(compound) %>% 
+  drop_na() %>% 
+  mutate(compound = str_to_title(compound),
+         class = case_when(grepl(x = compound, pattern = "acid$", ignore.case = T) ~ "Bile Acid",
+                               compound %in% c("Threonine", "Glycine", "Tyrosine", "Tyramine", "Serine", "Leucine", "Isoleucine",
+                                               "Valine", "Phenylalanine", "Alanine", "Proline", "Aspartate", 
+                                               "Methionine", "Glutamate", "Lysine", "Cysteine", "Tryptophan") ~ "Amino Acid",
+                               TRUE ~ "Fatty Acid")) %>% 
+  arrange(class, compound)
+
+
+# Heatmap legend color
+col_fun <- colorRamp2(breaks = c(-10, 0, 10), colors = c("#00aaad", "white", "#ad003a"))
+
+
+gg_covid_heatmap <- 
+  heatmap_data %>% 
+  mutate(compound = str_to_title(compound),
+         class = case_when(grepl(x = compound, pattern = "acid$", ignore.case = T) ~ "Bile Acid",
+                               compound %in% c("Threonine", "Glycine", "Tyrosine", "Tyramine", "Serine", "Leucine", "Isoleucine",
+                                               "Valine", "Phenylalanine", "Alanine", "Proline", "Aspartate",
+                                               "Methionine", "Glutamate", "Lysine", "Cysteine", "Tryptophan") ~ "Amino Acid",
+                               TRUE ~ "Fatty Acid")) %>% 
+  arrange(class, compound) %>% 
+  pivot_wider(c(vital_status, patient_ID), names_from = compound, values_from = heatmap_val) %>% 
+  group_by(patient_ID) %>% 
+  arrange(patient_ID) %>% 
+  ungroup() %>% 
+  select(-vital_status) %>% 
+  column_to_rownames("patient_ID") %>%  
+  as.matrix() %>% 
+  t() %>% 
+  Heatmap(
+    name = "Fold Change (log2)",
+    col = col_fun,
+    rect_gp = gpar(col = "black", lwd = 0.2),
+    column_names_gp = grid::gpar(fontsize = 8),
+    column_gap = unit(6, "mm"),
+    column_split = heatmap_labels,
+    column_title_gp = gpar(fontsize = 14),
+    column_title_rot = 0,
+    cluster_columns = TRUE,
+    show_column_names = FALSE,
+    show_column_dend = FALSE,
+    row_names_gp = gpar(fontsize = 8),
+    row_gap = unit(3.5, "mm"),
+    row_names_side = c("left"),
+    row_order = heatmap_order$compound,
+    row_split = heatmap_order$class,
+    cluster_rows = TRUE,
+    show_row_dend = FALSE,
+    row_dend_width = unit(4, "in"),
+    heatmap_width =  unit(12, "in")
+  )
+gg_covid_heatmap
+
+pdf("./Results/Figure_S3.pdf", height = 12, width = 17, onefile = F)
+gg_covid_heatmap
+dev.off()
+
+#### Heatmap END ####
+```
+
+
+### Save Image
+```{r, save-image, message=FALSE, warning=FALSE}
+save.image(file = "./Data/SARS-CoV-2_Modeling.RData")
+```
+
+
+
+

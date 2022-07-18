@@ -1,0 +1,532 @@
+{
+	"name":"ko02042",
+	"children":[
+	{
+		"name":"Type III toxins: Intracellular toxins",
+		"children":[
+		{
+			"name":"ADP-ribosyltransferase",
+			"children":[
+			{
+				"name":"Diphtheria toxin (DT)",
+				"children":[
+				{
+					"name":"K00776  tox; NAD-diphthamide ADP-ribosyltransferase [EC:2.4.2.36]"
+				}
+				]
+			},
+			{
+				"name":"Cholera toxin\/Heat-labile enterotoxin",
+				"children":[
+				{
+					"name":"K10928  ctxA; cholera enterotoxin subunit A [EC:2.4.2.36]"
+				},
+				{
+					"name":"K10929  ctxB; cholera enterotoxin subunit B"
+				}
+				]
+			},
+			{
+				"name":"Exototoxin-A (ETA)",
+				"children":[
+				{
+					"name":"K11020  toxA; exotoxin A [EC:2.4.2.-]"
+				}
+				]
+			},
+			{
+				"name":"Exoenzyme S\/T",
+				"children":[
+				{
+					"name":"K16635  exoS; exoenzyme S"
+				},
+				{
+					"name":"K16636  exoT; exoenzyme T"
+				}
+				]
+			},
+			{
+				"name":"Pertussis toxin (PT)",
+				"children":[
+				{
+					"name":"K11023  ptxA, artA, pltA; pertussis toxin subunit 1 [EC:2.4.2.-]"
+				},
+				{
+					"name":"K11024  ptxB; pertussis toxin subunit 2"
+				},
+				{
+					"name":"K11025  ptxC; pertussis toxin subunit 3"
+				},
+				{
+					"name":"K11026  ptxD; pertussis toxin subunit 4"
+				},
+				{
+					"name":"K11027  ptxE; pertussis toxin subunit 5"
+				}
+				]
+			},
+			{
+				"name":"ADP-ribosyltransferase toxin ArtA\/B",
+				"children":[
+				{
+					"name":"K11023  ptxA, artA, pltA; pertussis toxin subunit 1 [EC:2.4.2.-]"
+				},
+				{
+					"name":"K19298  subB, artB, pltB; subtilase cytotoxin, subunit B"
+				}
+				]
+			},
+			{
+				"name":"ADP-ribosyltransferase SpyA",
+				"children":[
+				{
+					"name":"K11044  spyA; C3 family ADP-ribosyltransferase [EC:2.4.2.-]"
+				}
+				]
+			}
+			]
+		},
+		{
+			"name":"Metalloprotease",
+			"children":[
+			{
+				"name":"Botulinum neurotoxin (BoNT)",
+				"children":[
+				{
+					"name":"K06011  boNT; botulinum neurotoxin [EC:3.4.24.69]"
+				},
+				{
+					"name":"K16623  ntnH; botulinum neurotoxin type non-toxic component"
+				},
+				{
+					"name":"K16624  ha-33; main hemagglutinin component"
+				},
+				{
+					"name":"K16625  ha-17; hemagglutinin component HA-17"
+				},
+				{
+					"name":"K16626  ha-70; hemagglutinin components HA-22\/23\/53"
+				}
+				]
+			},
+			{
+				"name":"Tetanus toxin (TeTx)",
+				"children":[
+				{
+					"name":"K08644  tetX; tentoxilysin [EC:3.4.24.68]"
+				}
+				]
+			},
+			{
+				"name":"Anthrax lethal toxin",
+				"children":[
+				{
+					"name":"K08645  lef; anthrax lethal toxin endopeptidase [EC:3.4.24.83]"
+				},
+				{
+					"name":"K11030  pagA; protective antigen"
+				}
+				]
+			}
+			]
+		},
+		{
+			"name":"Adenylate cyclase",
+			"children":[
+			{
+				"name":"Anthrax edema toxin",
+				"children":[
+				{
+					"name":"K11029  cyaA; anthrax edema toxin adenylate cyclase [EC:4.6.1.1]"
+				},
+				{
+					"name":"K11030  pagA; protective antigen"
+				}
+				]
+			},
+			{
+				"name":"Adenylate cyclase toxin (ACT)",
+				"children":[
+				{
+					"name":"K22944  cyaA; bifunctional hemolysin\/adenylate cyclase [EC:4.6.1.1]"
+				}
+				]
+			},
+			{
+				"name":"Exoenzyme Y",
+				"children":[
+				{
+					"name":"K16637  K16637, exoY; adenylate cyclase ExoY"
+				}
+				]
+			}
+			]
+		},
+		{
+			"name":"Others",
+			"children":[
+			{
+				"name":"Zona occludens toxin",
+				"children":[
+				{
+					"name":"K10954  zot; zona occludens toxin"
+				}
+				]
+			},
+			{
+				"name":"Shiga toxin",
+				"children":[
+				{
+					"name":"K11006  stxA; shiga toxin subunit A"
+				},
+				{
+					"name":"K11007  stxB; shiga toxin subunit B"
+				}
+				]
+			},
+			{
+				"name":"Subtilase cytotoxin",
+				"children":[
+				{
+					"name":"K19297  subA; subtilase cytotoxin, subunit A"
+				},
+				{
+					"name":"K19298  subB, artB, pltB; subtilase cytotoxin, subunit B"
+				}
+				]
+			},
+			{
+				"name":"Cytotoxic necrotizing factor 1\/Dermonecrotic toxin (DNT)",
+				"children":[
+				{
+					"name":"K11008  cnf1; cytotoxic necrotizing factor 1"
+				}
+				]
+			},
+			{
+				"name":"Enterotoxin ShET-1",
+				"children":[
+				{
+					"name":"K11011  set1A; enterotoxin Set1A"
+				},
+				{
+					"name":"K11012  set1B; enterotoxin Set1B"
+				}
+				]
+			},
+			{
+				"name":"Vacuolating cytotoxin",
+				"children":[
+				{
+					"name":"K11028  vacA; vacuolating cytotoxin"
+				}
+				]
+			},
+			{
+				"name":"Cytolethal distending toxin",
+				"children":[
+				{
+					"name":"K11013  cdtA; cytolethal distending toxin subunit A"
+				},
+				{
+					"name":"K11014  cdtB; cytolethal distending toxin subunit B"
+				},
+				{
+					"name":"K11015  cdtC; cytolethal distending toxin subunit C"
+				}
+				]
+			},
+			{
+				"name":"Exfoliative toxin type A",
+				"children":[
+				{
+					"name":"K11041  eta; exfoliative toxin A\/B"
+				}
+				]
+			},
+			{
+				"name":"Toxin A\/B",
+				"children":[
+				{
+					"name":"K11063  tcdAB; toxin A\/B"
+				}
+				]
+			},
+			{
+				"name":"Insecticidal toxin FitD\/Mcf",
+				"children":[
+				{
+					"name":"K19615  fitD, mcf; insecticidal toxin"
+				}
+				]
+			},
+			{
+				"name":"TccC-type insecticidal toxin",
+				"children":[
+				{
+					"name":"K11021  tccC; insecticidal toxin complex protein TccC"
+				}
+				]
+			},
+			{
+				"name":"Heat-stable enterotoxin",
+				"children":[
+				{
+					"name":"K16883  sta; heat-stable enterotoxin STa\/STI"
+				},
+				{
+					"name":"K16884  stb; heat-stable enterotoxin STb\/STII"
+				}
+				]
+			},
+			{
+				"name":"Typhoid toxin",
+				"children":[
+				{
+					"name":"K11014  cdtB; cytolethal distending toxin subunit B"
+				},
+				{
+					"name":"K11023  ptxA, artA, pltA; pertussis toxin subunit 1 [EC:2.4.2.-]"
+				},
+				{
+					"name":"K19298  subB, artB, pltB; subtilase cytotoxin, subunit B"
+				}
+				]
+			}
+			]
+		}
+		]
+	},
+	{
+		"name":"Type II toxins: Membrane damaging toxins",
+		"children":[
+		{
+			"name":"Pore-forming toxins, Beta-pore-forming\/Cholesterol-dependent",
+			"children":[
+			{
+				"name":"K10948  hlyA; hemolysin"
+			},
+			{
+				"name":"K11031  slo; thiol-activated cytolysin"
+			},
+			{
+				"name":"K11032  hlyII; hemolysin II"
+			},
+			{
+				"name":"K11038  hlg, luk; leukocidin\/hemolysin toxin family protein"
+			},
+			{
+				"name":"K11058  cpe; enterotoxin Cpe"
+			}
+			]
+		},
+		{
+			"name":"Pore-forming toxins, RTX",
+			"children":[
+			{
+				"name":"K10953  rtxA; RTX toxin RtxA"
+			},
+			{
+				"name":"K11005  hlyA; hemolysin A"
+			},
+			{
+				"name":"K11022  rtxA1, rtxA; structural toxin protein (hemagglutinin\/hemolysin) RtxA"
+			}
+			]
+		},
+		{
+			"name":"Pore-forming toxins, Other",
+			"children":[
+			{
+				"name":"K03699  tlyC; magnesium and cobalt exporter, CNNM family"
+			},
+			{
+				"name":"K10952  ace; accessory cholera enterotoxin"
+			},
+			{
+				"name":"K11016  shlA, hhdA, hpmA; hemolysin"
+			},
+			{
+				"name":"K11017  shlB, hhdB, hpmB; hemolysin activation\/secretion protein"
+			},
+			{
+				"name":"K11019  tdh; thermostable direct hemolysin"
+			},
+			{
+				"name":"K11028  vacA; vacuolating cytotoxin"
+			},
+			{
+				"name":"K11033  nheA; non-hemolytic enterotoxin A"
+			},
+			{
+				"name":"K11034  nheBC; non-hemolytic enterotoxin B\/C"
+			},
+			{
+				"name":"K11035  hblAB; hemolysin BL binding component"
+			},
+			{
+				"name":"K11036  hblC; hemolysin BL lytic component L2"
+			},
+			{
+				"name":"K11037  hblD; hemolysin BL lytic component L1"
+			},
+			{
+				"name":"K11039  hld; delta-hemolysin"
+			},
+			{
+				"name":"K11045  cfa; cAMP factor"
+			},
+			{
+				"name":"K11046  sagA; streptolysin S associated protein"
+			},
+			{
+				"name":"K11052  cylE; CylE protein"
+			},
+			{
+				"name":"K11068  hlyIII; hemolysin III"
+			},
+			{
+				"name":"K11139  hlyE, clyA, sheA; hemolysin E"
+			}
+			]
+		},
+		{
+			"name":"Toxins that enzymatically damage the membrane",
+			"children":[
+			{
+				"name":"K01114  plc; phospholipase C [EC:3.1.4.3]"
+			},
+			{
+				"name":"K16619  plc, cpa; phospholipase C \/ alpha-toxin [EC:3.1.4.3]"
+			},
+			{
+				"name":"K11018  tlh; thermolabile hemolysin"
+			},
+			{
+				"name":"K16638  exoU; exoenzyme U"
+			}
+			]
+		}
+		]
+	},
+	{
+		"name":"Type I toxins: Toxins that act from the cell surface",
+		"children":[
+		{
+			"name":"Superantigens",
+			"children":[
+			{
+				"name":"K11010  ympA; superantigen YpmA"
+			},
+			{
+				"name":"K11040  se; staphylococcal enterotoxin"
+			},
+			{
+				"name":"K11041  eta; exfoliative toxin A\/B"
+			},
+			{
+				"name":"K11043  tst; toxic shock syndrome toxin-1"
+			}
+			]
+		}
+		]
+	},
+	{
+		"name":"Toxins that damage the extracellular matrix",
+		"children":[
+		{
+			"name":"Hyaluronidases\/Collagenases",
+			"children":[
+			{
+				"name":"K23550  nanH; sialidase [EC:3.2.1.18]"
+			},
+			{
+				"name":"K01197  hya; hyaluronoglucosaminidase [EC:3.2.1.35]"
+			},
+			{
+				"name":"K01387  colA; microbial collagenase [EC:3.4.24.3]"
+			},
+			{
+				"name":"K08587  cloSI; clostripain [EC:3.4.22.8]"
+			}
+			]
+		}
+		]
+	},
+	{
+		"name":"Not specified",
+		"children":[
+		{
+			"name":"Ymt",
+			"children":[
+			{
+				"name":"K11009  ymt; murine toxin"
+			}
+			]
+		},
+		{
+			"name":"Hydrogen cyanide production",
+			"children":[
+			{
+				"name":"K10814  hcnA; hydrogen cyanide synthase HcnA [EC:1.4.99.5]"
+			},
+			{
+				"name":"K10815  hcnB; hydrogen cyanide synthase HcnB [EC:1.4.99.5]"
+			},
+			{
+				"name":"K10816  hcnC; hydrogen cyanide synthase HcnC [EC:1.4.99.5]"
+			}
+			]
+		},
+		{
+			"name":"Beta2 toxin",
+			"children":[
+			{
+				"name":"K11057  cpb2; beta2-toxin"
+			}
+			]
+		},
+		{
+			"name":"Enterotoxin",
+			"children":[
+			{
+				"name":"K11059  entA; probable enterotoxin A"
+			},
+			{
+				"name":"K11060  entB; probable enterotoxin B"
+			},
+			{
+				"name":"K11061  entC; probable enterotoxin C"
+			},
+			{
+				"name":"K11062  entD; probable enterotoxin D"
+			}
+			]
+		},
+		{
+			"name":"BteA",
+			"children":[
+			{
+				"name":"K15126  bteA; type III secretion system cytotoxic effector protein"
+			}
+			]
+		},
+		{
+			"name":"Superantigen-like protein",
+			"children":[
+			{
+				"name":"K11042  ssl1; superantigen-like protein 1"
+			},
+			{
+				"name":"K23587  ssl5_11; superantigen-like protein 5\/11"
+			},
+			{
+				"name":"K23586  ssl7, set1; superantigen-like protein 7"
+			}
+			]
+		}
+		]
+	}
+	]
+}
+
