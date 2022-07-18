@@ -33,9 +33,3 @@ https://git-lfs.github.com/
 Then clone the repository:
 
 https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository
-
-Then run the R Markdown. You may need to change the file paths in your R Markdown that you've downloaded (e.g. file paths to the R images)
-
-To download the data: 
-
-Download the zipped file at: https://zenodo.org/badge/latestdoi/515348728
