@@ -1,3 +1,4 @@
 *.html linguist-detectable=false
+* text=auto
 *.rds filter=lfs diff=lfs merge=lfs -text
 *.RData filter=lfs diff=lfs merge=lfs -text
