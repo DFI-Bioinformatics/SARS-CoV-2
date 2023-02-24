@@ -1,6 +1,14 @@
 # SARS-CoV-2_Manuscript
 Code and Data from our SARS-CoV-2 manuscript titled "Immunomodulatory fecal metabolites are associated with mortality in COVID-19 
-patients with respiratory failure"
+patients with respiratory failure" 
+
+
+Nature Communications 13, Article Number: 6615 (2022)
+
+Published 03 Noveber, 2022
+
+https://doi.org/10.1038/s41467-022-34260-2
+
 
 [![DOI](https://zenodo.org/badge/515348728.svg)](https://zenodo.org/badge/latestdoi/515348728)
 
