@@ -5,7 +5,7 @@ patients with respiratory failure"
 
 Nature Communications 13, Article Number: 6615 (2022)
 
-Published 03 Noveber, 2022
+Published 03 November, 2022
 
 https://doi.org/10.1038/s41467-022-34260-2
 
